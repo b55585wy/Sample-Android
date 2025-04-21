@@ -1,0 +1,29 @@
+package com.tsinghua.sample.model;
+
+public class Device {
+    public static final int TYPE_FRONT_CAMERA = 0;
+    public static final int TYPE_BACK_CAMERA = 1;
+    public static final int TYPE_MICROPHONE = 2;
+    public static final int TYPE_IMU = 3;
+    public static final int TYPE_RING = 4;
+    public static final int TYPE_ECG = 5;
+    public static final int TYPE_OXIMETER = 6;
+
+    private int type;
+    private String name;
+    private Boolean isRunning;
+
+    public Device(int type, String name) {
+        this.type = type;
+        this.name = name;
+        this.isRunning = false;
+    }
+    public void setRunning(Boolean isRunning){
+        this.isRunning = isRunning;
+    }
+    public int getType() { return type; }
+    public String getName() { return name; }
+    public Boolean isRunning(){
+        return isRunning;
+    }
+}

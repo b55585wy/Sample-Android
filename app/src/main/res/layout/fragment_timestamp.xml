@@ -4,9 +4,10 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
+    android:background="@drawable/bg_bottom_sheet"
     android:padding="16dp">
 
-    <!-- 添加标签区域 -->
+    <!-- 添加标签 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -24,26 +25,21 @@
             android:text="添加" />
     </LinearLayout>
 
-    <!-- 标签列表，用于展示已添加标签 -->
-    <ListView
-        android:id="@+id/lv_labels"
+    <!-- 标签列表 RecyclerView -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rv_labels"
         android:layout_width="match_parent"
         android:layout_height="200dp"
         android:layout_marginTop="8dp" />
 
-    <!-- 预览区域，显示所有记录的事件，包裹在 ScrollView 中 -->
-    <ScrollView
+    <!-- 时间戳记录列表 RecyclerView -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rv_records"
         android:layout_width="match_parent"
         android:layout_height="150dp"
         android:layout_marginTop="8dp"
         android:background="#EEEEEE"
-        android:padding="8dp">
-        <TextView
-            android:id="@+id/tv_preview"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="预览区" />
-    </ScrollView>
+        android:padding="8dp" />
 
     <!-- 保存按钮 -->
     <Button
