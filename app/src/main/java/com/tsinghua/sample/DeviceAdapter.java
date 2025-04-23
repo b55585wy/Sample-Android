@@ -29,6 +29,7 @@ import com.tsinghua.sample.activity.RingSettingsActivity;
 import com.tsinghua.sample.device.OximeterService;
 import com.tsinghua.sample.media.CameraHelper;
 import com.tsinghua.sample.media.IMURecorder;
+import com.tsinghua.sample.media.MultiMicAudioRecorderHelper;
 import com.tsinghua.sample.media.RecorderHelper;
 import com.tsinghua.sample.model.Device;
 
@@ -42,6 +43,7 @@ public class DeviceAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
     private CameraHelper frontCameraHelper;
     private CameraHelper backCameraHelper;
     private IMURecorder imuRecorder;
+    private MultiMicAudioRecorderHelper multiMicAudioRecorderHelper;
 
 
     private OximeterViewHolder currentOximeterViewHolder;
@@ -50,6 +52,7 @@ public class DeviceAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
         this.context = context;
         this.devices = devices;
         this.imuRecorder = new IMURecorder(context);
+
     }
     private final ServiceConnection oximeterConnection = new ServiceConnection() {
         @Override
@@ -166,17 +169,28 @@ public class DeviceAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
         }
         else if (holder instanceof MicrophoneViewHolder) {
             MicrophoneViewHolder h = (MicrophoneViewHolder) holder;
+            multiMicAudioRecorderHelper = new MultiMicAudioRecorderHelper(context);
             h.deviceName.setText(device.getName());
             h.startBtn.setText(device.isRunning() ? "结束" : "开始");
+
             h.startBtn.setOnClickListener(v -> {
                 device.setRunning(!device.isRunning());
+                if (device.isRunning()) {
+                    multiMicAudioRecorderHelper.startRecording();
+                    h.startBtn.setText("结束");
+                } else {
+                    multiMicAudioRecorderHelper.stopRecording();
+                    h.startBtn.setText("开始");
+                }
                 notifyItemChanged(position);
             });
+
             h.settingsBtn.setOnClickListener(v -> {
                 Intent intent = new Intent(context, MicrophoneSettingsActivity.class);
                 intent.putExtra("deviceName", device.getName());
                 context.startActivity(intent);
             });
+
         } else if (holder instanceof ImuViewHolder) {
             ImuViewHolder h = (ImuViewHolder) holder;
             h.deviceName.setText(device.getName());

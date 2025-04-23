@@ -1,10 +1,16 @@
 package com.tsinghua.sample.media;
 
+import static android.content.Context.MODE_PRIVATE;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.os.Environment;
 import android.util.Log;
+
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -21,7 +27,13 @@ public class MultiMicAudioRecorderHelper {
     private boolean isRecording = false;
     private Thread recordingThread1, recordingThread2;
     private FileOutputStream fos1, fos2, timestampFos1, timestampFos2;
+    private Context context;
 
+    // 设置数据更新监听器
+
+    public MultiMicAudioRecorderHelper(Context context) {
+        this.context = context;
+    }
     // 方法：开始录音
     public void startRecording() {
         // 获取最小缓冲区大小
@@ -47,13 +59,26 @@ public class MultiMicAudioRecorderHelper {
                     bufferSize
             );
 
+            // 获取实验ID并设置文件存储路径
+            SharedPreferences prefs = context.getSharedPreferences("AppSettings", MODE_PRIVATE);
+            String experimentId = prefs.getString("experiment_id", "default");
+            String dirPath = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
+                    + "/Sample/" + experimentId + "/";
+            File dir = new File(dirPath);
+            if (!dir.exists()) dir.mkdirs();  // 确保目录存在
+
+            // 生成一个新的输出目录
+            String timestamp = generateTimestamp();
+            outputDirectory = new File(dir, "Sample_" + timestamp);
+            if (!outputDirectory.exists()) outputDirectory.mkdirs();
+
             // 创建文件输出流，用于存储音频数据
-            fos1 = new FileOutputStream(new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "mic1_audio_record.pcm"));
-            fos2 = new FileOutputStream(new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "mic2_audio_record.pcm"));
+            fos1 = new FileOutputStream(new File(outputDirectory, "mic1_audio_record.pcm"));
+            fos2 = new FileOutputStream(new File(outputDirectory, "mic2_audio_record.pcm"));
 
             // 创建文件输出流，用于存储时间戳
-            timestampFos1 = new FileOutputStream(new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "mic1_timestamp.txt"));
-            timestampFos2 = new FileOutputStream(new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "mic2_timestamp.txt"));
+            timestampFos1 = new FileOutputStream(new File(outputDirectory, "mic1_timestamp.txt"));
+            timestampFos2 = new FileOutputStream(new File(outputDirectory, "mic2_timestamp.txt"));
 
             // 开始录音
             audioRecord1.startRecording();
@@ -99,18 +124,18 @@ public class MultiMicAudioRecorderHelper {
                 if (timestampFos2 != null) {
                     timestampFos2.close();
                 }
-                if (outputDirectory != null) {
-                    File mic1AudioFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "mic1_audio_record.pcm");
-                    File mic2AudioFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "mic2_audio_record.pcm");
-                    File mic1TimestampFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "mic1_timestamp.txt");
-                    File mic2TimestampFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "mic2_timestamp.txt");
 
-                    // Move audio and timestamp files to the output directory
-                    moveFileToDirectory(mic1AudioFile, outputDirectory);
-                    moveFileToDirectory(mic2AudioFile, outputDirectory);
-                    moveFileToDirectory(mic1TimestampFile, outputDirectory);
-                    moveFileToDirectory(mic2TimestampFile, outputDirectory);
-                }
+                // 移动文件到输出目录
+                File mic1AudioFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "mic1_audio_record.pcm");
+                File mic2AudioFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "mic2_audio_record.pcm");
+                File mic1TimestampFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "mic1_timestamp.txt");
+                File mic2TimestampFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "mic2_timestamp.txt");
+
+                // 移动音频和时间戳文件到输出目录
+                moveFileToDirectory(mic1AudioFile, outputDirectory);
+                moveFileToDirectory(mic2AudioFile, outputDirectory);
+                moveFileToDirectory(mic1TimestampFile, outputDirectory);
+                moveFileToDirectory(mic2TimestampFile, outputDirectory);
             } catch (IOException | InterruptedException e) {
                 e.printStackTrace();
             }
@@ -118,6 +143,7 @@ public class MultiMicAudioRecorderHelper {
     }
 
     // 内部线程类：负责读取录音数据并写入文件
+    // 在AudioRecordRunnable的run方法中处理音频数据并获取波形数据
     private class AudioRecordRunnable implements Runnable {
         private AudioRecord audioRecord;
         private FileOutputStream fos;
@@ -139,7 +165,6 @@ public class MultiMicAudioRecorderHelper {
                 bytesRead = audioRecord.read(buffer, 0, buffer.length);
                 if (bytesRead > 0 && fos != null) {
                     try {
-                        // 7104/4=1776
                         long timestamp = System.nanoTime();  // 获取当前时间戳
                         timestampFos.write(("" + timestamp + "\n").getBytes());  // 写入时间戳到文件
 
@@ -151,6 +176,7 @@ public class MultiMicAudioRecorderHelper {
                 }
             }
         }
+
     }
 
     // 获取文件路径
@@ -167,4 +193,8 @@ public class MultiMicAudioRecorderHelper {
         }
     }
 
+    // 时间戳生成方法
+    private String generateTimestamp() {
+        return String.valueOf(System.nanoTime());
+    }
 }
