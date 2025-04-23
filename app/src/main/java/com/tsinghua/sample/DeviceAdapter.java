@@ -52,7 +52,6 @@ public class DeviceAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
         this.context = context;
         this.devices = devices;
         this.imuRecorder = new IMURecorder(context);
-
     }
     private final ServiceConnection oximeterConnection = new ServiceConnection() {
         @Override

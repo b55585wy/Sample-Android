@@ -51,11 +51,6 @@
         <activity
             android:windowSoftInputMode="adjustResize"
             android:name=".SettingsActivity" />
-        <service
-            android:name=".service.FloatingWindowService"
-            android:exported="false"
-            android:foregroundServiceType="mediaProjection"
-            android:permission="android.permission.SYSTEM_ALERT_WINDOW"/>
     </application>
     <uses-feature android:name="android.hardware.usb.host" />
     <uses-permission android:name="android.hardware.usb.permission" />
