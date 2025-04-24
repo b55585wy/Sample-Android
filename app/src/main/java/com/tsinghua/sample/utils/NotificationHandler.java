@@ -22,7 +22,9 @@ public class NotificationHandler {
     private static final Deque<Integer> yData = new ArrayDeque<>();
     private static final Deque<Integer> zData = new ArrayDeque<>();
 
-    private static final int MAX_DATA_POINTS = 200;
+    private static final int MAX_DATA_POINTS = 500;
+    private static final int REFRESH_INTERVAL = 500;  // 图表刷新间隔：500ms
+    private static long lastRefreshTime = 0;
 
     public static void setAAChartView(AAChartView chartView) {
         aaChartView = chartView;
@@ -99,6 +101,7 @@ public class NotificationHandler {
                         }
                     }
 
+                    // 延时刷新图表
                     updateChartData(newGreenData, newIrData, newRedData, newXData, newYData, newZData);
                 } else {
                     result.append("Invalid waveform response packet");
@@ -132,15 +135,19 @@ public class NotificationHandler {
 
     public static void updateChartData(List<Integer> newGreenData, List<Integer> newIrData, List<Integer> newRedData,
                                        List<Integer> newXData, List<Integer> newYData, List<Integer> newZData) {
+
         appendData(greenData, newGreenData);
         appendData(irData, newIrData);
         appendData(redData, newRedData);
         appendData(xData, newXData);
         appendData(yData, newYData);
         appendData(zData, newZData);
-        refreshCharts();
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - lastRefreshTime >= REFRESH_INTERVAL) {
+            refreshCharts();
+            lastRefreshTime = currentTime;
+        }
     }
-
     private static void appendData(Deque<Integer> oldData, List<Integer> newData) {
         if (oldData.size() + newData.size() > MAX_DATA_POINTS) {
             oldData.clear(); // 先清空
@@ -149,21 +156,31 @@ public class NotificationHandler {
     }
 
     private static void refreshCharts() {
+        // 获取数据点的最新值
+        Integer[] greenArray = greenData.toArray(new Integer[0]);
+        Integer[] irArray = irData.toArray(new Integer[0]);
+        Integer[] redArray = redData.toArray(new Integer[0]);
+
+        Integer[] xArray = xData.toArray(new Integer[0]);
+        Integer[] yArray = yData.toArray(new Integer[0]);
+        Integer[] zArray = zData.toArray(new Integer[0]);
+
+        // 更新图表数据
         if (aaChartView != null) {
             aaChartView.aa_onlyRefreshTheChartDataWithChartOptionsSeriesArray(
                     new AASeriesElement[]{
-//                            new AASeriesElement().name("green").data(greenData.toArray(new Object[greenData.size()])),
-//                            new AASeriesElement().name("ir").data(irData.toArray(new Object[irData.size()])),
-                            new AASeriesElement().name("red").data(redData.toArray(new Object[redData.size()]))
+                            new AASeriesElement().name("green").data(greenArray),
+                            new AASeriesElement().name("ir").data(irArray),
+                            new AASeriesElement().name("red").data(redArray)
                     });
         }
 
         if (aaChartViewXYZ != null) {
             aaChartViewXYZ.aa_onlyRefreshTheChartDataWithChartOptionsSeriesArray(
                     new AASeriesElement[]{
-                            new AASeriesElement().name("x").data(xData.toArray(new Object[xData.size()])),
-                            new AASeriesElement().name("y").data(yData.toArray(new Object[yData.size()])),
-                            new AASeriesElement().name("z").data(zData.toArray(new Object[zData.size()]))
+                            new AASeriesElement().name("x").data(xArray),
+                            new AASeriesElement().name("y").data(yArray),
+                            new AASeriesElement().name("z").data(zArray)
                     });
         }
     }

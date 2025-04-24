@@ -225,12 +225,28 @@ public class DeviceAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
             });
         } else if (holder instanceof RingViewHolder) {
             RingViewHolder h = (RingViewHolder) holder;
+            h.setUpChart(context);
+
             h.deviceName.setText(device.getName());
-            h.startBtn.setText(device.isRunning() ? "结束" : "开始");
-            h.startBtn.setOnClickListener(v -> {
-                device.setRunning(!device.isRunning());
-                notifyItemChanged(position);
+            h.itemView.setOnClickListener(v -> {
+                h.toggleInfo();  // 点击展开或收起 IMU 数据的预览
             });
+            h.connectBtn.setOnClickListener(v -> h.connectToDevice(context));
+
+            h.startBtn.setOnClickListener(v -> {
+                if (device.isRunning()) {
+                    // 停止 IMU 录制
+                    h.stopRingRecording();
+                    device.setRunning(false);
+                    h.startBtn.setText("开始");
+                } else {
+                    // 启动 IMU 录制
+                    h.startRingRecording(context);
+                    device.setRunning(true);
+                    h.startBtn.setText("结束");
+                }
+            });
+
             h.settingsBtn.setOnClickListener(v -> {
                 Intent intent = new Intent(context, RingSettingsActivity.class);
                 intent.putExtra("deviceName", device.getName());

@@ -16,8 +16,11 @@ import android.hardware.usb.UsbManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.util.Log;
+import android.view.View;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -29,9 +32,12 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.lm.sdk.LmAPI;
 import com.lm.sdk.inter.IResponseListener;
 import com.lm.sdk.mode.SystemControlBean;
+import com.lm.sdk.utils.BLEUtils;
 import com.tsinghua.sample.DeviceAdapter;
 import com.tsinghua.sample.R;
+import com.tsinghua.sample.RingViewHolder;
 import com.tsinghua.sample.model.Device;
+import com.tsinghua.sample.utils.NotificationHandler;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -43,6 +49,7 @@ public class ListActivity extends AppCompatActivity implements IResponseListener
     private UsbManager usbManager;
     private static final int PERMISSION_REQUEST_CODE = 100;  // Permission request code
     private static final int REQUEST_CAMERA_PERMISSION = 200;
+    public RingViewHolder ringViewHolder;
 
     private RecyclerView recyclerView;
     private DeviceAdapter adapter;
@@ -72,6 +79,7 @@ public class ListActivity extends AppCompatActivity implements IResponseListener
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_list);
+
         LmAPI.init(getApplication());
         LmAPI.setDebug(true);
         LmAPI.addWLSCmdListener(this, this);
@@ -120,6 +128,21 @@ public class ListActivity extends AppCompatActivity implements IResponseListener
 
         adapter = new DeviceAdapter(this, devices);
         recyclerView.setAdapter(adapter);
+        recyclerView.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(View v, int left, int top, int right, int bottom,
+                                       int oldLeft, int oldTop, int oldRight, int oldBottom) {
+                // 在布局完成后获取 ViewHolder
+                ringViewHolder = (RingViewHolder) recyclerView.findViewHolderForAdapterPosition(4);
+                if (ringViewHolder != null) {
+                    // 进行操作，例如设置数据或改变视图
+                    Log.d("RingViewHolder", "RingViewHolder at position 4 is ready.");
+                } else {
+                    Log.d("RingViewHolder", "RingViewHolder at position 4 is null.");
+                }
+            }
+        });
+
     }
 
     private void checkOximeterUsbPermission() {
@@ -208,27 +231,58 @@ public class ListActivity extends AppCompatActivity implements IResponseListener
 
     @Override
     public void lmBleConnecting(int i) {
+        Log.e("ConnectDevice"," 蓝牙连接中");
+        String msg = "蓝牙连接中，状态码：" + i;
+        ringViewHolder.recordLog(msg);
 
     }
 
     @Override
     public void lmBleConnectionSucceeded(int i) {
+        String msg = "蓝牙连接成功，状态码：" + i;
+        ringViewHolder.recordLog(msg);
+        if(i==7){
+            BLEUtils.setGetToken(true);
+            Log.e("TAG","\n连接成功");
+            new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    LmAPI.SYNC_TIME();
+                }
+            }, 500); // 延迟 2 秒（2000 毫秒）
+            new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                @Override
+                public void run() {
 
+                    LmAPI.GET_BATTERY((byte) 0x00);
+                }
+            }, 1000); // 延迟 2 秒（2000 毫秒）
+            new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+                @Override
+                public void run() {
+
+                    LmAPI.GET_VERSION((byte) 0x00);
+                }
+            }, 1500); // 延迟 2 秒（2000 毫秒）
+
+        }
     }
 
     @Override
     public void lmBleConnectionFailed(int i) {
-
+        String msg = "蓝牙连接失败，状态码：" + i;
+        Log.e("RingLog", msg);
+        ringViewHolder.recordLog(msg);
     }
 
     @Override
     public void VERSION(byte b, String s) {
-
+        ringViewHolder.recordLog(s);
     }
 
     @Override
     public void syncTime(byte b, byte[] bytes) {
-
+        ringViewHolder.recordLog("时间同步完成");
     }
 
     @Override
@@ -243,7 +297,9 @@ public class ListActivity extends AppCompatActivity implements IResponseListener
 
     @Override
     public void battery(byte b, byte b1) {
-
+        if (b == 0) {
+            ringViewHolder.recordLog("电池电量为" + b1);
+        }
     }
 
     @Override
@@ -253,7 +309,8 @@ public class ListActivity extends AppCompatActivity implements IResponseListener
 
     @Override
     public void saveData(String s) {
-
+        String msg = NotificationHandler.handleNotification(hexStringToByteArray(s));
+        ringViewHolder.recordLog(msg);
     }
 
     @Override
@@ -394,5 +451,14 @@ public class ListActivity extends AppCompatActivity implements IResponseListener
     @Override
     public void appRefresh(SystemControlBean systemControlBean) {
 
+    }
+    public static byte[] hexStringToByteArray(String hexString) {
+        int len = hexString.length();
+        byte[] data = new byte[len / 2];
+        for (int i = 0; i < len; i += 2) {
+            data[i / 2] = (byte) ((Character.digit(hexString.charAt(i), 16) << 4)
+                    + Character.digit(hexString.charAt(i + 1), 16));
+        }
+        return data;
     }
 }
