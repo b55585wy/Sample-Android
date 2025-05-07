@@ -1,5 +1,7 @@
 package com.tsinghua.sample.activity;
 
+import static com.tsinghua.sample.utils.VivaLink.startScan;
+
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.AlertDialog;
@@ -21,11 +23,14 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.View;
+import android.widget.Button;
 import android.widget.Toast;
 
+import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.fragment.app.FragmentManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -34,10 +39,18 @@ import com.lm.sdk.inter.IResponseListener;
 import com.lm.sdk.mode.SystemControlBean;
 import com.lm.sdk.utils.BLEUtils;
 import com.tsinghua.sample.DeviceAdapter;
+import com.tsinghua.sample.MainActivity;
 import com.tsinghua.sample.R;
 import com.tsinghua.sample.RingViewHolder;
+import com.tsinghua.sample.SettingsActivity;
+import com.tsinghua.sample.TimestampFragment;
 import com.tsinghua.sample.model.Device;
 import com.tsinghua.sample.utils.NotificationHandler;
+import com.tsinghua.sample.utils.VivaLink;
+import com.vivalnk.sdk.BuildConfig;
+import com.vivalnk.sdk.VitalClient;
+import com.vivalnk.sdk.exception.VitalCode;
+import com.vivalnk.sdk.utils.ProcessUtils;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -113,10 +126,39 @@ public class ListActivity extends AppCompatActivity implements IResponseListener
         registerReceiver(usbReceiver, new IntentFilter(ACTION_USB_PERMISSION), Context.RECEIVER_NOT_EXPORTED);
 
         checkOximeterUsbPermission();
+        EdgeToEdge.enable(this);
+        Button btnSettings = findViewById(R.id.btn_settings);
 
+        btnSettings.setOnClickListener(v -> {
+            startActivity(new Intent(ListActivity.this, SettingsActivity.class));
+        });
+        Button btnTimeStamp = findViewById(R.id.btn_Timestamp);
+
+        btnTimeStamp.setOnClickListener(v -> {
+            FragmentManager fm = getSupportFragmentManager();
+            TimestampFragment fragment = (TimestampFragment) fm.findFragmentByTag("TimestampFragment");
+
+            if (fragment == null) {
+                fragment = new TimestampFragment(); // 仅在 Fragment 为空时创建新实例
+            }
+
+            fragment.show(fm, "TimestampFragment");
+        });
         recyclerView = findViewById(R.id.deviceRecyclerView);
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
-
+        if (ProcessUtils.isMainProcess(this)) {
+            VitalClient.getInstance().init(this);
+            if (BuildConfig.DEBUG) {
+                VitalClient.getInstance().openLog();
+                VitalClient.getInstance().allowWriteToFile(true);
+            }
+        }
+        int resultCode = VitalClient.getInstance().checkBle();
+        Log.e("VivaLink",String.valueOf(resultCode));
+        if (resultCode != VitalCode.RESULT_OK) {
+            Toast.makeText(ListActivity.this, "Vital Client runtime check failed",
+                    Toast.LENGTH_LONG).show();
+        }
         List<Device> devices = new ArrayList<>();
         devices.add(new Device(Device.TYPE_FRONT_CAMERA, "前置录制"));
         devices.add(new Device(Device.TYPE_BACK_CAMERA, "后置录制"));
@@ -125,7 +167,6 @@ public class ListActivity extends AppCompatActivity implements IResponseListener
         devices.add(new Device(Device.TYPE_RING, "指环"));
         devices.add(new Device(Device.TYPE_ECG, "心电"));
         devices.add(new Device(Device.TYPE_OXIMETER, "血氧仪"));
-
         adapter = new DeviceAdapter(this, devices);
         recyclerView.setAdapter(adapter);
         recyclerView.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {

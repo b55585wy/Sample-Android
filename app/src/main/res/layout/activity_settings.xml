@@ -19,6 +19,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:hint="请输入时间参数（单位：秒）"
+            android:visibility="gone"
             android:inputType="number"
             android:padding="15dp"
             android:background="@drawable/rounded_edittext"
@@ -32,6 +33,7 @@
             android:id="@+id/et_y_axis_min"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:visibility="gone"
             android:hint="请输入Y轴最小值"
             android:inputType="number"
             android:padding="15dp"
@@ -58,6 +60,8 @@
 
         <!-- MAC 地址列表标题 -->
         <TextView
+            android:visibility="gone"
+
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="MAC 地址列表"
@@ -70,6 +74,8 @@
 
         <!-- RecyclerView 显示MAC地址 -->
         <androidx.recyclerview.widget.RecyclerView
+            android:visibility="gone"
+
             android:id="@+id/rv_mac_addresses"
             android:layout_width="match_parent"
             android:layout_height="200dp"
@@ -81,6 +87,8 @@
 
         <!-- MAC 地址输入框 -->
         <EditText
+            android:visibility="gone"
+
             android:id="@+id/et_mac_address"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -97,6 +105,8 @@
 
         <!-- 设备描述输入框 -->
         <EditText
+            android:visibility="gone"
+
             android:id="@+id/et_mac_desc"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -113,6 +123,8 @@
 
         <!-- 添加MAC地址按钮 -->
         <Button
+            android:visibility="gone"
+
             android:id="@+id/btn_add_mac"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -122,6 +134,8 @@
             android:layout_marginTop="16dp"
             android:layout_gravity="center"/>
         <Button
+            android:visibility="gone"
+
             android:id="@+id/btnLogout"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

@@ -47,7 +47,7 @@ public class PlotView extends View {
         axisPaint.setTextSize(30);
 
         plotPaint.setColor(plotColor);
-        plotPaint.setStrokeWidth(2);
+        plotPaint.setStrokeWidth(3);
         plotPaint.setStyle(Paint.Style.STROKE);
     }
 

@@ -5,6 +5,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
+import android.content.SharedPreferences;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.IBinder;
@@ -44,6 +45,7 @@ public class DeviceAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
     private CameraHelper backCameraHelper;
     private IMURecorder imuRecorder;
     private MultiMicAudioRecorderHelper multiMicAudioRecorderHelper;
+    public static EcgViewHolder currentEcgViewHolder;
 
 
     private OximeterViewHolder currentOximeterViewHolder;
@@ -143,7 +145,7 @@ public class DeviceAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
             h.itemView.setOnClickListener(v -> {
                 h.toggleInfo();
                 if (backCameraHelper == null) {
-                    backCameraHelper = new CameraHelper(context,null,  h.surfaceView);
+                    backCameraHelper = new CameraHelper(context, null, h.surfaceView);
                 }
             });
 
@@ -165,8 +167,7 @@ public class DeviceAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
                 intent.putExtra("deviceName", device.getName());
                 context.startActivity(intent);
             });
-        }
-        else if (holder instanceof MicrophoneViewHolder) {
+        } else if (holder instanceof MicrophoneViewHolder) {
             MicrophoneViewHolder h = (MicrophoneViewHolder) holder;
             multiMicAudioRecorderHelper = new MultiMicAudioRecorderHelper(context);
             h.deviceName.setText(device.getName());
@@ -253,19 +254,28 @@ public class DeviceAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
             });
         } else if (holder instanceof EcgViewHolder) {
             EcgViewHolder h = (EcgViewHolder) holder;
+            DeviceAdapter.currentEcgViewHolder = (EcgViewHolder) holder;
+
             h.deviceName.setText(device.getName());
-            h.startBtn.setText(device.isRunning() ? "结束" : "开始");
-            h.startBtn.setOnClickListener(v -> {
-                device.setRunning(!device.isRunning());
-                notifyItemChanged(position);
-            });
+
+            h.itemView.setOnClickListener(v -> h.toggleInfo());
+
+            // 从当前 device 对象里拿子设备列表
+            List<com.vivalnk.sdk.model.Device> ecgSubDevices = device.getEcgSubDevices();
+
+            h.bindData(context, ecgSubDevices);
+
             h.settingsBtn.setOnClickListener(v -> {
                 Intent intent = new Intent(context, EcgSettingsActivity.class);
                 intent.putExtra("deviceName", device.getName());
+                intent.putExtra("device_object", device); // 把Device对象传过去
+
                 context.startActivity(intent);
             });
+
         } else if (holder instanceof OximeterViewHolder) {
             OximeterViewHolder h = (OximeterViewHolder) holder;
+
             h.deviceName.setText(device.getName());
             h.startBtn.setText(device.isRunning() ? "结束" : "开始");
 
@@ -283,6 +293,7 @@ public class DeviceAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
 
         }
     }
+
 
     @Override
     public int getItemCount() {

@@ -15,7 +15,10 @@
     <color name="my_error">#B00020</color> <!-- 错误颜色 -->
     <color name="selected_background">#E0F7FA</color> <!-- 浅蓝色，选中项的背景色 -->
     <color name="selectedItemBackground">#E0F7FA</color> <!-- 浅蓝色背景 -->
-
+    <color name="ecgPrimary">#3F51B5</color>      <!-- 选中背景 -->
+    <color name="ecgOnPrimary">#FFFFFF</color>    <!-- 选中文字 -->
+    <color name="ecgSurface">#FFFFFF</color>      <!-- 未选背景 -->
+    <color name="ecgOnSurface">#212121</color>    <!-- 未选文字 -->
     <!-- 选中的设备名称的文本颜色 -->
     <color name="selectedItemTextColor">#00796B</color> <!-- 深绿色文本 -->
 

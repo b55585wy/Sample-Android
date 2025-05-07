@@ -47,7 +47,6 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
     Button connectBtn;  // 用于连接蓝牙按钮
     private BufferedWriter logWriter; // 日志写入器
     private boolean isRecordingRing = false;
-    private AAChartView chartViewGreen, chartViewIr, chartViewRed, chartViewIMU;  // 为每个数据系列分别设置图表
     private PlotView plotViewG,plotViewI;
     private PlotView plotViewR,plotViewX;
     private PlotView plotViewY,plotViewZ;
@@ -149,6 +148,13 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
         if (!isRecordingRing) {
             isRecordingRing = true;
             startBtn.setText("停止指环");
+            plotViewG.clearPlot();
+            plotViewI.clearPlot();
+            plotViewR.clearPlot();
+            plotViewX.clearPlot();
+            plotViewY.clearPlot();
+            plotViewZ.clearPlot();
+
             SharedPreferences prefs = context.getSharedPreferences("AppSettings", MODE_PRIVATE);
             int savedTime = prefs.getInt("time_parameter", 0);
             String hexData;

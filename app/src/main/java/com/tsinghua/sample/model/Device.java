@@ -1,6 +1,9 @@
 package com.tsinghua.sample.model;
 
-public class Device {
+import java.io.Serializable;
+import java.util.List;
+
+public class Device implements Serializable {
     public static final int TYPE_FRONT_CAMERA = 0;
     public static final int TYPE_BACK_CAMERA = 1;
     public static final int TYPE_MICROPHONE = 2;
@@ -14,6 +17,7 @@ public class Device {
     private Boolean isRunning;
     // 在 Device.java 中添加：
     private boolean infoExpanded = false;
+    private List<com.vivalnk.sdk.model.Device> ecgSubDevices; // 注意这里是viva sdk的Device，不是你的Device
 
     public boolean isInfoExpanded() {
         return infoExpanded;
@@ -35,5 +39,12 @@ public class Device {
     public String getName() { return name; }
     public Boolean isRunning(){
         return isRunning;
+    }
+    public List<com.vivalnk.sdk.model.Device> getEcgSubDevices() {
+        return ecgSubDevices;
+    }
+
+    public void setEcgSubDevices(List<com.vivalnk.sdk.model.Device> ecgSubDevices) {
+        this.ecgSubDevices = ecgSubDevices;
     }
 }

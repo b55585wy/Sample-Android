@@ -216,7 +216,7 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
             fragment.show(fm, "TimestampFragment");
         });
         btnScanECG.setOnClickListener(v -> {
-            startScan(this);
+            //startScan(this);
         });
         btnScanRing.setOnClickListener(v->{
             SharedPreferences prefs = getSharedPreferences("AppSettings", MODE_PRIVATE);
