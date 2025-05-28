@@ -83,7 +83,7 @@ public class IMURecorder implements SensorEventListener {
 
         // 生成一个新的输出目录
         String timestamp = generateTimestamp();
-        File newOutputDirectory = new File(dir, "Sample_" + timestamp);
+        File newOutputDirectory = new File(dir, "Sample_IMU_" + timestamp);
 
         if (!newOutputDirectory.exists()) {
             newOutputDirectory.mkdirs();  // 创建新目录
@@ -126,20 +126,20 @@ public class IMURecorder implements SensorEventListener {
     }
     public void onSensorChanged(SensorEvent event) {
         if (isRecording) {
-            long timestamp = event.timestamp;
+            long sensortimestamp = event.timestamp;
+            long timestamp = System.currentTimeMillis();  // 获取当前时间戳
             float x = event.values[0];
             float y = event.values[1];
             float z = event.values[2];
-
             if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
-                accelerometerData.add(String.format(Locale.getDefault(), "%d,%f,%f,%f", timestamp, x, y, z));
+                accelerometerData.add(String.format(Locale.getDefault(), "%d,%d,%f,%f,%f",sensortimestamp,timestamp, x, y, z));
                 accelerometerDataCount++;
                 if (accelerometerDataCount >= UPDATE_INTERVAL) {
                     notifyDataUpdate();
                     accelerometerDataCount = 0; // Reset the counter after update
                 }
             } else if (event.sensor.getType() == Sensor.TYPE_GYROSCOPE) {
-                gyroscopeData.add(String.format(Locale.getDefault(), "%d,%f,%f,%f", timestamp, x, y, z));
+                gyroscopeData.add(String.format(Locale.getDefault(), "%d,%d,%f,%f,%f", sensortimestamp,timestamp, x, y, z));
                 gyroscopeDataCount++;
                 if (gyroscopeDataCount >= UPDATE_INTERVAL) {
                     notifyDataUpdate();
@@ -151,19 +151,16 @@ public class IMURecorder implements SensorEventListener {
     private void notifyDataUpdate() {
         if (dataUpdateListener != null) {
             if (!accelerometerData.isEmpty() && !gyroscopeData.isEmpty()) {
-                // 解析最后一条加速度数据并转换为 float
                 String[] accelValues = accelerometerData.get(accelerometerData.size() - 1).split(",");
-                float accelX = Float.parseFloat(accelValues[1]);
-                float accelY = Float.parseFloat(accelValues[2]);
-                float accelZ = Float.parseFloat(accelValues[3]);
+                float accelX = Float.parseFloat(accelValues[2]);
+                float accelY = Float.parseFloat(accelValues[3]);
+                float accelZ = Float.parseFloat(accelValues[4]);
 
-                // 解析最后一条陀螺仪数据并转换为 float
                 String[] gyroValues = gyroscopeData.get(gyroscopeData.size() - 1).split(",");
-                float gyroX = Float.parseFloat(gyroValues[1]);
-                float gyroY = Float.parseFloat(gyroValues[2]);
-                float gyroZ = Float.parseFloat(gyroValues[3]);
+                float gyroX = Float.parseFloat(gyroValues[2]);
+                float gyroY = Float.parseFloat(gyroValues[3]);
+                float gyroZ = Float.parseFloat(gyroValues[4]);
 
-                // 格式化数据
                 String accel = String.format("x: %f, y: %f, z: %f", accelX, accelY, accelZ);
                 String gyro = String.format("x: %f, y: %f, z: %f", gyroX, gyroY, gyroZ);
 
@@ -180,7 +177,7 @@ public class IMURecorder implements SensorEventListener {
         // Handle changes in sensor accuracy if needed
     }
     private String generateTimestamp() {
-        return String.valueOf(System.nanoTime());
+        return String.valueOf(System.currentTimeMillis());
     }
     public interface OnDataUpdateListener {
         void onDataUpdate(String accelData, String gyroData);

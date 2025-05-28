@@ -69,7 +69,7 @@ public class MultiMicAudioRecorderHelper {
 
             // 生成一个新的输出目录
             String timestamp = generateTimestamp();
-            outputDirectory = new File(dir, "Sample_" + timestamp);
+            outputDirectory = new File(dir, "Sample_MIC_" + timestamp);
             if (!outputDirectory.exists()) outputDirectory.mkdirs();
 
             // 创建文件输出流，用于存储音频数据
@@ -165,7 +165,7 @@ public class MultiMicAudioRecorderHelper {
                 bytesRead = audioRecord.read(buffer, 0, buffer.length);
                 if (bytesRead > 0 && fos != null) {
                     try {
-                        long timestamp = System.nanoTime();  // 获取当前时间戳
+                        long timestamp = System.currentTimeMillis();;  // 获取当前时间戳
                         timestampFos.write(("" + timestamp + "\n").getBytes());  // 写入时间戳到文件
 
                         fos.write(buffer, 0, bytesRead);  // 写入音频数据到文件
@@ -195,6 +195,6 @@ public class MultiMicAudioRecorderHelper {
 
     // 时间戳生成方法
     private String generateTimestamp() {
-        return String.valueOf(System.nanoTime());
+        return String.valueOf(System.currentTimeMillis());
     }
 }

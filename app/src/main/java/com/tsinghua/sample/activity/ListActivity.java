@@ -34,6 +34,7 @@ import androidx.fragment.app.FragmentManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.google.mediapipe.solutions.facemesh.FaceMesh;
 import com.lm.sdk.LmAPI;
 import com.lm.sdk.inter.IResponseListener;
 import com.lm.sdk.mode.SystemControlBean;
@@ -44,6 +45,7 @@ import com.tsinghua.sample.R;
 import com.tsinghua.sample.RingViewHolder;
 import com.tsinghua.sample.SettingsActivity;
 import com.tsinghua.sample.TimestampFragment;
+import com.tsinghua.sample.device.OximeterService;
 import com.tsinghua.sample.model.Device;
 import com.tsinghua.sample.utils.NotificationHandler;
 import com.tsinghua.sample.utils.VivaLink;
@@ -51,6 +53,8 @@ import com.vivalnk.sdk.BuildConfig;
 import com.vivalnk.sdk.VitalClient;
 import com.vivalnk.sdk.exception.VitalCode;
 import com.vivalnk.sdk.utils.ProcessUtils;
+
+import org.opencv.android.OpenCVLoader;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -92,6 +96,7 @@ public class ListActivity extends AppCompatActivity implements IResponseListener
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_list);
+        OpenCVLoader.initLocal();
 
         LmAPI.init(getApplication());
         LmAPI.setDebug(true);
@@ -144,6 +149,7 @@ public class ListActivity extends AppCompatActivity implements IResponseListener
 
             fragment.show(fm, "TimestampFragment");
         });
+
         recyclerView = findViewById(R.id.deviceRecyclerView);
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
         if (ProcessUtils.isMainProcess(this)) {
@@ -183,7 +189,9 @@ public class ListActivity extends AppCompatActivity implements IResponseListener
                 }
             }
         });
-
+        Intent svcIntent = new Intent(this, OximeterService.class);
+        this.startService(svcIntent);
+        this.bindService(svcIntent, adapter.getOximeterConnection(), Context.BIND_AUTO_CREATE);
     }
 
     private void checkOximeterUsbPermission() {

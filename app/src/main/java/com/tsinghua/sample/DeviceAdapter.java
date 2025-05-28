@@ -28,11 +28,15 @@ import com.tsinghua.sample.activity.MicrophoneSettingsActivity;
 import com.tsinghua.sample.activity.OximeterSettingsActivity;
 import com.tsinghua.sample.activity.RingSettingsActivity;
 import com.tsinghua.sample.device.OximeterService;
+import com.tsinghua.sample.media.CameraFaceProcessor;
 import com.tsinghua.sample.media.CameraHelper;
 import com.tsinghua.sample.media.IMURecorder;
 import com.tsinghua.sample.media.MultiMicAudioRecorderHelper;
 import com.tsinghua.sample.media.RecorderHelper;
 import com.tsinghua.sample.model.Device;
+
+
+import org.opencv.android.OpenCVLoader;
 
 import java.util.List;
 
@@ -111,27 +115,53 @@ public class DeviceAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
             FrontCameraViewHolder h = (FrontCameraViewHolder) holder;
 
             h.deviceName.setText(device.getName());
+            SharedPreferences prefs = context.getSharedPreferences("AppSettings", Context.MODE_PRIVATE);
+            boolean enableInference = prefs.getBoolean("enable_inference", false);
+            if(enableInference){
+                h.itemView.setOnClickListener(v -> {
+                    h.toggleInfo();
+                });
 
-            h.itemView.setOnClickListener(v -> {
-                h.toggleInfo();
+                CameraFaceProcessor cameraFaceProcessor = null;
+                try {
+                    cameraFaceProcessor = new CameraFaceProcessor(context, h.surfaceView,h.plotView);
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+
+                CameraFaceProcessor finalCameraFaceProcessor = cameraFaceProcessor;
+                h.startBtn.setOnClickListener(v -> {
+                    if (device.isRunning()) {
+                        finalCameraFaceProcessor.stopCamera();
+                        device.setRunning(false);
+                        h.startBtn.setText("开始");
+                    } else {
+                        finalCameraFaceProcessor.startCamera();
+                        device.setRunning(true);
+                        h.startBtn.setText("结束");
+                    }
+                });
+
+            }
+            else{
+                h.itemView.setOnClickListener(v -> {
+                    h.toggleInfo();
                 if (frontCameraHelper == null) {
                     frontCameraHelper = new CameraHelper(context, h.surfaceView, null);
                 }
-            });
-
-
-            h.startBtn.setOnClickListener(v -> {
-                if (device.isRunning()) {
-                    frontCameraHelper.stopFrontRecording();
-                    device.setRunning(false);
-                    h.startBtn.setText("开始");
-                } else {
-                    frontCameraHelper.startFrontRecording();
-                    device.setRunning(true);
-                    h.startBtn.setText("结束");
-                }
-            });
-
+                });
+                h.startBtn.setOnClickListener(v -> {
+                    if (device.isRunning()) {
+                        frontCameraHelper.stopFrontRecording();
+                        device.setRunning(false);
+                        h.startBtn.setText("开始");
+                    } else {
+                        frontCameraHelper.startFrontRecording();
+                        device.setRunning(true);
+                        h.startBtn.setText("结束");
+                    }
+                });
+            }
             h.settingsBtn.setOnClickListener(v -> {
                 Intent intent = new Intent(context, FrontCameraSettingsActivity.class);
                 intent.putExtra("deviceName", device.getName());
@@ -275,15 +305,19 @@ public class DeviceAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
 
         } else if (holder instanceof OximeterViewHolder) {
             OximeterViewHolder h = (OximeterViewHolder) holder;
-
+            this.currentOximeterViewHolder = h;
             h.deviceName.setText(device.getName());
-            h.startBtn.setText(device.isRunning() ? "结束" : "开始");
-
             h.startBtn.setOnClickListener(v -> {
-                device.setRunning(!device.isRunning());
-                notifyItemChanged(position);
-            });
+                if (!device.isRunning()) {
+                    h.startRecord(context);
+                    device.setRunning(true);
+                } else {
+                    h.stopRecord();
+                    device.setRunning(false);
 
+                }
+                h.startBtn.setText(device.isRunning() ? "停止" : "开始");
+            });
             h.settingsBtn.setOnClickListener(v -> {
                 Intent intent = new Intent(context, OximeterSettingsActivity.class);
                 intent.putExtra("deviceName", device.getName());
@@ -294,6 +328,9 @@ public class DeviceAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
         }
     }
 
+    public ServiceConnection getOximeterConnection() {
+        return oximeterConnection;
+    }
 
     @Override
     public int getItemCount() {

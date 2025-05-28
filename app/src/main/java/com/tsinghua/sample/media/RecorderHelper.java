@@ -4,9 +4,15 @@ import static android.content.Context.MODE_PRIVATE;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.res.AssetManager;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Matrix;
 import android.hardware.camera2.*;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
+import android.media.Image;
+import android.media.ImageReader;
 import android.media.MediaRecorder;
 import android.os.Build;
 import android.os.Environment;
@@ -19,10 +25,17 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 
+import com.google.mediapipe.solutions.facemesh.FaceMesh;
+import com.google.mediapipe.solutions.facemesh.FaceMeshOptions;
+import com.tsinghua.sample.utils.FacePreprocessor;
+import com.tsinghua.sample.utils.HeartRateEstimator;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStreamWriter;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -39,14 +52,11 @@ public class RecorderHelper {
     public File outputDirectory;
     public File newOutputDirectory;
 
+
     private List<String> frameDataFront = new ArrayList<>();
     private List<String> frameDataBack = new ArrayList<>();
 
     public boolean isFlashlightOn = true;
-    public boolean isFirstTime = true;
-    private long startTime;
-    private int recordingTimeInMicroseconds;
-
     public RecorderHelper(CameraHelper cameraHelper, Context context) {
         this.cameraHelper = cameraHelper;
         this.context = context;
@@ -55,7 +65,7 @@ public class RecorderHelper {
     }
 
     private String generateTimestamp() {
-        return String.valueOf(System.nanoTime());
+        return String.valueOf(System.currentTimeMillis());
     }
     private void prepareDirectories() {
         SharedPreferences prefs = context.getSharedPreferences("AppSettings", MODE_PRIVATE);
@@ -70,8 +80,10 @@ public class RecorderHelper {
             if (!outputDirectory.exists()) outputDirectory.mkdirs();
         }
     }
-
     public void setupFrontRecording() {
+        startTimestamp  = null;
+        outputDirectory = null;
+        frameDataFront.clear();
         startTimestamp = generateTimestamp();
         prepareDirectories();
 
@@ -98,9 +110,11 @@ public class RecorderHelper {
                                     public void onCaptureCompleted(@NonNull CameraCaptureSession session,
                                                                    @NonNull CaptureRequest request,
                                                                    @NonNull TotalCaptureResult result) {
-                                        long timestamp = result.get(CaptureResult.SENSOR_TIMESTAMP);
+                                        long sensortimestamp = result.get(CaptureResult.SENSOR_TIMESTAMP);
+                                        long timestamp = System.currentTimeMillis();  // 获取当前时间戳
+
                                         long frameNumber = result.getFrameNumber();
-                                        frameDataFront.add(String.format(Locale.getDefault(), "%d,%d", timestamp, frameNumber));
+                                        frameDataFront.add(String.format(Locale.getDefault(), "%d,%d,%d", timestamp,sensortimestamp, frameNumber));
                                     }
                                 }, new Handler());
                                 mediaRecorderFront.start();
@@ -120,6 +134,9 @@ public class RecorderHelper {
     }
 
     public void setupBackRecording() {
+        startTimestamp  = null;
+        outputDirectory = null;
+        frameDataBack.clear();
         if (startTimestamp == null) startTimestamp = generateTimestamp();
         prepareDirectories();
 
@@ -148,9 +165,10 @@ public class RecorderHelper {
                                     public void onCaptureCompleted(@NonNull CameraCaptureSession session,
                                                                    @NonNull CaptureRequest request,
                                                                    @NonNull TotalCaptureResult result) {
-                                        long timestamp = result.get(CaptureResult.SENSOR_TIMESTAMP);
+                                        long sensortimestamp = result.get(CaptureResult.SENSOR_TIMESTAMP);
+                                        long timestamp = System.currentTimeMillis();;  // 获取当前时间戳
                                         long frameNumber = result.getFrameNumber();
-                                        frameDataBack.add(String.format(Locale.getDefault(), "%d,%d", timestamp, frameNumber));
+                                        frameDataBack.add(String.format(Locale.getDefault(), "%d,%d,%d", timestamp,sensortimestamp, frameNumber));
                                     }
                                 }, new Handler());
                                 mediaRecorderBack.start();
@@ -205,6 +223,8 @@ public class RecorderHelper {
                 cameraHelper.getCaptureSessionFront().stopRepeating();
                 mediaRecorderFront.stop();
                 mediaRecorderFront.release();
+                mediaRecorderFront=null;
+
             }
         } catch (Exception e) {
             Log.e(TAG, "停止前摄录像失败", e);
@@ -220,6 +240,8 @@ public class RecorderHelper {
                 cameraHelper.getCaptureSessionBack().stopRepeating();
                 mediaRecorderBack.stop();
                 mediaRecorderBack.release();
+                mediaRecorderBack=null;
+
             }
         } catch (Exception e) {
             Log.e(TAG, "停止后摄录像失败", e);
@@ -253,4 +275,16 @@ public class RecorderHelper {
             Log.e(TAG, "写入帧数据失败: " + filename, e);
         }
     }
+    public static Bitmap convertJPEGToBitmap(Image image) {
+        ByteBuffer buffer = image.getPlanes()[0].getBuffer();
+        byte[] bytes = new byte[buffer.remaining()];
+        buffer.get(bytes);
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+    }
+    private Bitmap rotateBitmap(Bitmap bitmap, int rotationDegrees) {
+        Matrix matrix = new Matrix();
+        matrix.postRotate(rotationDegrees);
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
+    }
+
 }

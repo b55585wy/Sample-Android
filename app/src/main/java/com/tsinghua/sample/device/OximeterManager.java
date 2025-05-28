@@ -182,18 +182,16 @@ public class OximeterManager {
                             spo2 = recv[i + 4] & 0xFF;
                         }
                     }
+                    OximeterData data = new OximeterData(t);
 
                     if (!bvpList.isEmpty()) {
-                        int last = bvpList.get(bvpList.size() - 1);
-                        OximeterData data = new OximeterData(t);
-                        data.bvp = last;
+                        data.bvp = bvpList.get(bvpList.size() - 1);
                         buf.add(data);
                         preview.add(data);
                         lock.release();
                     }
 
                     if (spo2 != null) {
-                        OximeterData data = new OximeterData(t);
                         data.spo2 = spo2;
                         buf.add(data);
                         preview.add(data);
@@ -201,14 +199,14 @@ public class OximeterManager {
                     }
 
                     if (hr != null) {
-                        OximeterData data = new OximeterData(t);
                         data.hr = hr;
                         buf.add(data);
                         preview.add(data);
                         lock.release();
-                        Log.d(TAG, "HR = " + hr + ", SpO₂ = " + spo2);
                     }
-
+                    if (listener != null&& data.bvp!=-1) {
+                        listener.onOximeterData(data);
+                    }
                     while (preview.size() > 10000) preview.remove(0);
                     while (buf.size() > (recording ? 10000 : 1)) {
                         buf.remove(0);
@@ -228,46 +226,21 @@ public class OximeterManager {
     public void startRecording(String path) {
         if (recording) return;
 
-        File dir = new File(path);
-        if (!dir.exists()) dir.mkdirs();
+        recording = true;
 
-        try {
-            hrWriter = new FileWriter(new File(dir, "hr.csv"));
-            spo2Writer = new FileWriter(new File(dir, "spo2.csv"));
-            bvpWriter = new FileWriter(new File(dir, "bvp.csv"));
-
-            hrWriter.write("timestamp,hr\\n");
-            spo2Writer.write("timestamp,spo2\\n");
-            bvpWriter.write("timestamp,bvp\\n");
-
-            recording = true;
-
-            new Thread(() -> {
-                while (recording) {
-                    try {
-                        lock.acquire();
-                        if (buf.isEmpty()) continue;
-
-                        OximeterData d = buf.remove(0);
-                        if (d.hr >= 0) hrWriter.write(d.timestamp + "," + d.hr + "\\n");
-                        if (d.spo2 >= 0) spo2Writer.write(d.timestamp + "," + d.spo2 + "\\n");
-                        if (d.bvp >= 0) bvpWriter.write(d.timestamp + "," + d.bvp + "\\n");
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                }
-
+        new Thread(() -> {
+            while (recording) {
                 try {
-                    hrWriter.close();
-                    spo2Writer.close();
-                    bvpWriter.close();
-                } catch (IOException e) {
+                    lock.acquire();
+                    if (buf.isEmpty()) continue;
+                    OximeterData d = buf.remove(0);
+
+                } catch (Exception e) {
                     e.printStackTrace();
                 }
-            }).start();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+            }
+
+        }).start();
     }
 
     public void stopRecording() {

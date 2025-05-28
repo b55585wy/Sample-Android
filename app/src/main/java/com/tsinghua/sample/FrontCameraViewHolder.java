@@ -9,12 +9,15 @@ import android.widget.TextView;
 
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.tsinghua.sample.utils.PlotView;
+
 public class FrontCameraViewHolder extends RecyclerView.ViewHolder {
     public TextView deviceName;
     public Button startBtn;
     public ImageButton settingsBtn;
     public SurfaceView surfaceView;
     public View infoLayout;
+    public PlotView plotView;
     private boolean infoVisible = false;
 
     public FrontCameraViewHolder(View itemView) {
@@ -24,6 +27,7 @@ public class FrontCameraViewHolder extends RecyclerView.ViewHolder {
         settingsBtn = itemView.findViewById(R.id.settingsBtn);
         surfaceView = itemView.findViewById(R.id.surfaceView);
         infoLayout = itemView.findViewById(R.id.infoLayout);
+        plotView = itemView.findViewById(R.id.plotView);
     }
 
     public void toggleInfo() {

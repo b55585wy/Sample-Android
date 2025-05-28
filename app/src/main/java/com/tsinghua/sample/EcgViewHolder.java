@@ -1,13 +1,18 @@
 package com.tsinghua.sample;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.os.Environment;
+import android.text.TextUtils;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -30,8 +35,16 @@ import com.vivalnk.sdk.model.Motion;
 import com.vivalnk.sdk.model.SampleData;
 import com.vivalnk.sdk.utils.GSON;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.net.URLEncoder;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 public class EcgViewHolder extends RecyclerView.ViewHolder {
@@ -74,30 +87,156 @@ public class EcgViewHolder extends RecyclerView.ViewHolder {
         PlotView plotViewX = subDeviceView.findViewById(R.id.plotViewX);
         PlotView plotViewY = subDeviceView.findViewById(R.id.plotViewY);
         PlotView plotViewZ = subDeviceView.findViewById(R.id.plotViewZ);
-
+        Button setUserBtn   = subDeviceView.findViewById(R.id.setUserBtn);   // ★
+        Button eraseUserBtn = subDeviceView.findViewById(R.id.eraseUserBtn); // ★
         Button toggleSamplingBtn = subDeviceView.findViewById(R.id.toggleSamplingBtn);  // 新的开始/停止按钮
+        EditText etUserInfo = subDeviceView.findViewById(R.id.etUserInfo);   // ★
 
         macText.setText(device.getName());
         plotView.setPlotColor(Color.parseColor("#03A9F4"));
         plotViewX.setPlotColor(Color.parseColor("#FFFF00"));
         plotViewY.setPlotColor(Color.parseColor("#FF00FF"));
         plotViewZ.setPlotColor(Color.parseColor("#00FFFF"));
+        final String[] currentUser = {"default"};     // ★ 当前生效的 userName，默认 "default"
 
         macText.setText(device.getName());
         toggleSamplingBtn.setEnabled(false);
         eraseBtn.setEnabled(false);
+        setUserBtn.setEnabled(false);      // ★
+        eraseUserBtn.setEnabled(false);    // ★
+        setUserBtn.setOnClickListener(b -> {
+            String info = etUserInfo.getText().toString().trim();
+            if (TextUtils.isEmpty(info) || info.length() > 15) {
+                Toast.makeText(context, "内容为空或超过 15 字节", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            CommandRequest req = new CommandRequest.Builder()
+                    .setType(CommandType.setUserInfoToFlash)
+                    .setTimeout(3_000)
+                    .addParam("info", info)
+                    .build();
+            VitalClient.getInstance().execute(device, req, new Callback() {
+                @Override
+                public void onComplete(Map<String, Object> data) {
+                    Log.d("ECG", "User onComplete: " + data);
+                }
+
+                @Override
+                public void onError(int code, String msg) {
+                    Log.e("ECG", "User onError: code=" + code + ", msg=" + msg);
+                }
+            });
+            Toast.makeText(context, "写入成功", Toast.LENGTH_SHORT).show();
+        });
+
+        eraseUserBtn.setOnClickListener(b -> {
+            CommandRequest req = new CommandRequest.Builder()
+                    .setType(CommandType.eraseUserInfoFromFlash)         // ★
+                    .setTimeout(3_000)
+                    .build();
+            VitalClient.getInstance().execute(device, req, new Callback() {
+                @Override
+                public void onComplete(Map<String, Object> data) {
+                    Log.d("ECG", "cleanUser onComplete: " + data);
+                }
+
+                @Override
+                public void onError(int code, String msg) {
+                    Log.e("ECG", "cleanUser onError: code=" + code + ", msg=" + msg);
+                }
+            });
+            currentUser[0] = "default";                                  // ★ 还原
+        });
+
         // 初始状态是 "开始采样"
         toggleSamplingBtn.setText("开始采样");
-
+        final boolean[] isRecording = {false};
+        final BufferedWriter[] writer = {null};
         // 设置按钮点击事件，进行开始和停止的切换
         toggleSamplingBtn.setOnClickListener(v -> {
-            if ("Start Sampling".equals(toggleSamplingBtn.getText())) {
-                startSampling(device);
-                toggleSamplingBtn.setText("停止采样"); // 更新按钮文本为“停止采样”
-                logView.setText("开始采样: " + device.getName());
-            } else {
+            if (!isRecording[0]) {                         // —— 开始采样 ——
+                startSampling(device);                     // （可放到 onComplete 里再调也行）
+                eraseBtn.setEnabled(false);
+                setUserBtn.setEnabled(false);
+                eraseUserBtn.setEnabled(false);
+                /* 1. 读取用户信息 ----------------------------------------- */
+                CommandRequest readReq = new CommandRequest.Builder()
+                        .setType(CommandType.readUserInfoFromFlash) // 读取
+                        .setTimeout(3_000)
+                        .build();
+
+                VitalClient.getInstance().execute(device, readReq, new Callback() {
+                    private void afterGetUser(String userInfo) {
+                        if (TextUtils.isEmpty(userInfo)) userInfo = "default";   // ★ 失败或空 → default
+                        currentUser[0] = userInfo;
+
+                        /* 2. 生成实验 ID（若 AppSettings 内无保存） */
+                        SharedPreferences sp = context.getSharedPreferences("AppSettings",
+                                Context.MODE_PRIVATE);
+                        String expId = sp.getString("experiment_id", "");
+                        if (TextUtils.isEmpty(expId)) {
+                            expId = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
+                                    .format(new Date());
+                        }
+
+                        /* 3. 创建目录 ------------------------------------------------ */
+                        File dir = new File(
+                                Environment.getExternalStoragePublicDirectory(
+                                        Environment.DIRECTORY_MOVIES),
+                                "Sample/" + expId + "/VivaLinkLog/" +
+                                        device.getName() + "/" + userInfo);
+
+                        if (!dir.exists() && !dir.mkdirs()) {
+                            Toast.makeText(context, "无法创建目录", Toast.LENGTH_SHORT).show();
+                            return;             // 目录失败，不再继续
+                        }
+
+                        /* 4. 打开日志文件 -------------------------------------------- */
+                        String fn = "VivaLink_log_" +
+                                new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
+                                        .format(new Date()) + ".txt";
+                        try {
+                            writer[0] = new BufferedWriter(new FileWriter(new File(dir, fn)));
+                        } catch (IOException e) {
+                            Toast.makeText(context, "文件创建失败", Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+
+                        /* 5. 更新状态与 UI（主线程） -------------------------------- */
+                        ((Activity) context).runOnUiThread(() -> {
+                            isRecording[0] = true;
+                            toggleSamplingBtn.setText("停止采样");
+                            logView.setText("开始采样: " + device.getName());
+                        });
+                    }
+
+                    @Override      // 读取成功
+                    public void onComplete(Map<String, Object> data) {
+                        String ui = data == null ? null : (String) data.get("userInfo");
+                        afterGetUser(ui);
+                    }
+
+                    @Override      // 读取失败：直接用 default 继续
+                    public void onError(int code, String msg) {
+                        Log.e("ECG", "readUserInfo onError: " + code + ", " + msg);
+                        afterGetUser(null);    // 传 null → 会走 default
+                    }
+                });
+            }
+            else {               // —— 停止采样 ——
                 stopSampling(device);
-                toggleSamplingBtn.setText("开始采样"); // 更新按钮文本为“开始采样”
+                eraseBtn.setEnabled(true);
+                setUserBtn.setEnabled(true);
+                eraseUserBtn.setEnabled(true);
+                try {
+                    if (writer[0] != null) {
+                        writer[0].close();
+                        writer[0] = null;
+                    }
+                } catch (IOException e) { e.printStackTrace(); }
+
+                isRecording[0] = false;
+                toggleSamplingBtn.setText("开始采样");
                 logView.setText("停止采样: " + device.getName());
             }
         });
@@ -121,6 +260,10 @@ public class EcgViewHolder extends RecyclerView.ViewHolder {
             });
         });
         connectBtn.setOnClickListener(v -> {
+            toggleSamplingBtn.setEnabled(false);
+            eraseBtn.setEnabled(false);
+            setUserBtn.setEnabled(false);      // ★
+            eraseUserBtn.setEnabled(false);    // ★
             BleConnectOptions options = new BleConnectOptions.Builder().setAutoConnect(false).build();
             VitalClient.getInstance().connect(device, options, new BluetoothConnectListener() {
                 @Override
@@ -130,6 +273,13 @@ public class EcgViewHolder extends RecyclerView.ViewHolder {
                         @Override
                         public void onReceiveData(Device device, Map<String, Object> data) {
                             String logStr = "接收到数据: " + GSON.toJson(data);
+                            if (isRecording[0] && writer[0] != null) {
+                                try {
+
+                                    writer[0].write(data + "\n");
+                                    writer[0].flush();
+                                } catch (IOException e) { e.printStackTrace(); }
+                            }
                             Log.e("TAG", logStr);
                         }
 
@@ -218,7 +368,8 @@ public class EcgViewHolder extends RecyclerView.ViewHolder {
                     ((Activity) context).runOnUiThread(() -> {
                         toggleSamplingBtn.setEnabled(true);
                         eraseBtn.setEnabled(true);
-
+                        setUserBtn.setEnabled(true);      // ★
+                        eraseUserBtn.setEnabled(true);    // ★
                         Toast.makeText(context,
                                 device.getName() + " 已就绪，可开始采样或擦除 Flash",
                                 Toast.LENGTH_SHORT).show();

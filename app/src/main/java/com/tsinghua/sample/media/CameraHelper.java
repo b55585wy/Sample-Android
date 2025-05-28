@@ -148,7 +148,7 @@ public class CameraHelper {
     // region 录像控制
 
     public void startFrontRecording() {
-        recorderHelperFront.setupFrontRecording();   // ↙︎ 会重新 createCaptureSession
+        recorderHelperFront.setupFrontRecording();
         isRecordingFront = true;
     }
 

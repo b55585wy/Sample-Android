@@ -50,5 +50,10 @@
             android:layout_width="match_parent"
             android:layout_height="200dp"
             android:layout_marginTop="8dp" />
+        <com.tsinghua.sample.utils.PlotView
+            android:id="@+id/plotView"
+            android:layout_width="match_parent"
+            android:layout_height="75dp"
+             />
     </LinearLayout>
 </LinearLayout>
