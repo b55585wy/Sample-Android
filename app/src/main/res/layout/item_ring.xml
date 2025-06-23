@@ -159,6 +159,185 @@
 
         </LinearLayout>
 
+        <!-- 新增：主动测量控制区域 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginBottom="8dp"
+            android:background="#F0FFF0"
+            android:padding="8dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🎯 主动测量控制"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="#2E7D32"
+                android:layout_marginBottom="6dp"/>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="测量时间："
+                    android:textSize="12sp"
+                    android:textColor="#333"
+                    android:layout_gravity="center_vertical"
+                    android:layout_marginEnd="4dp" />
+
+                <EditText
+                    android:id="@+id/editText_measurement_time"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="36dp"
+                    android:hint="秒数 (1-3600)"
+                    android:text="30"
+                    android:textSize="12sp"
+                    android:background="@android:color/white"
+                    android:padding="6dp"
+                    android:layout_marginEnd="4dp"
+                    android:inputType="number"
+                    android:maxLines="1" />
+
+                <Button
+                    android:id="@+id/btn_start_measurement"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:text="开始测量"
+                    android:textSize="12sp"
+                    android:background="#4CAF50"
+                    android:textColor="@android:color/white"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <!-- 新增：运动控制区域 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginBottom="8dp"
+            android:background="#FFF3E0"
+            android:padding="8dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🏃‍♂️ 运动控制"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="#E65100"
+                android:layout_marginBottom="6dp"/>
+
+            <!-- 运动参数输入行 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="6dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="总时长："
+                    android:textSize="11sp"
+                    android:textColor="#333"
+                    android:layout_gravity="center_vertical"
+                    android:layout_marginEnd="4dp" />
+
+                <EditText
+                    android:id="@+id/editText_exercise_duration"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="34dp"
+                    android:hint="秒"
+                    android:text="14400"
+                    android:textSize="11sp"
+                    android:background="@android:color/white"
+                    android:padding="4dp"
+                    android:layout_marginEnd="4dp"
+                    android:inputType="number"
+                    android:maxLines="1" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="片段："
+                    android:textSize="11sp"
+                    android:textColor="#333"
+                    android:layout_gravity="center_vertical"
+                    android:layout_marginEnd="4dp" />
+
+                <EditText
+                    android:id="@+id/editText_segment_duration"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="34dp"
+                    android:hint="秒"
+                    android:text="600"
+                    android:textSize="11sp"
+                    android:background="@android:color/white"
+                    android:padding="4dp"
+                    android:inputType="number"
+                    android:maxLines="1" />
+
+            </LinearLayout>
+
+            <!-- 运动控制按钮行 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="6dp">
+
+                <Button
+                    android:id="@+id/btn_start_exercise"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="36dp"
+                    android:text="开始运动"
+                    android:textSize="12sp"
+                    android:background="#FF9800"
+                    android:textColor="@android:color/white"
+                    android:layout_marginEnd="4dp" />
+
+                <Button
+                    android:id="@+id/btn_stop_exercise"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="36dp"
+                    android:text="结束运动"
+                    android:textSize="12sp"
+                    android:background="#F44336"
+                    android:textColor="@android:color/white"
+                    android:layout_marginStart="4dp"
+                    android:enabled="false" />
+
+            </LinearLayout>
+
+            <!-- 运动状态显示 -->
+            <TextView
+                android:id="@+id/text_exercise_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="运动状态: 就绪"
+                android:textSize="11sp"
+                android:textColor="#333"
+                android:background="#FFFFFF"
+                android:padding="6dp"
+                android:textStyle="italic"/>
+
+        </LinearLayout>
+
         <!-- 状态日志显示区域 -->
         <LinearLayout
             android:layout_width="match_parent"
@@ -360,7 +539,7 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="🔗 蓝牙连接: 建立与戒指设备的BLE连接\n\n⏰ 时间同步:\n  • 更新时间: 将主机当前时间同步到戒指，设置戒指系统时钟\n  • 时间校准: 测量主机与戒指的时间同步质量和延迟\n  • 建议流程: 先更新时间 → 再时间校准 → 然后进行数据采集\n\n📁 文件操作:\n  • 获取文件列表: 查看设备中存储的所有历史数据文件\n  • 批量下载: 下载文件列表中的所有文件\n  • 单个下载: 手动输入文件名进行精确下载\n  • 文件格式: 用户ID_时间戳_类型.txt (如: 010203040506_1722909000000000_7.txt)\n\n📊 实时数据: 显示来自戒指传感器的实时PPG和加速度数据\n  • PPG数据用于心率、血氧等生理参数监测\n  • 加速度数据用于运动状态和姿态检测"
+                android:text="🔗 蓝牙连接: 建立与戒指设备的BLE连接\n\n⏰ 时间同步:\n  • 更新时间: 将主机当前时间同步到戒指，设置戒指系统时钟\n  • 时间校准: 测量主机与戒指的时间同步质量和延迟\n  • 建议流程: 先更新时间 → 再时间校准 → 然后进行数据采集\n\n🎯 主动测量: 手动控制单次测量\n  • 测量时间: 设置测量持续时间(1-3600秒)\n  • 开始测量: 立即开始一次PPG和传感器数据采集\n  • 适用场景: 短时间精确测量，实验室环境测试\n\n🏃‍♂️ 运动控制: 长时间分段运动监测\n  • 总时长: 整个运动的总持续时间(秒)\n  • 片段时长: 每个测量片段的持续时间(秒)\n  • 开始运动: 自动按片段进行循环测量\n  • 结束运动: 手动提前终止运动监测\n  • 适用场景: 长时间运动监测，如4小时运动，每10分钟测量一次\n  • 示例: 总时长14400秒(4小时)，片段600秒(10分钟)\n\n📁 文件操作:\n  • 获取文件列表: 查看设备中存储的所有历史数据文件\n  • 批量下载: 下载文件列表中的所有文件\n  • 单个下载: 手动输入文件名进行精确下载\n  • 文件格式: 用户ID_时间戳_类型.txt (如: 010203040506_1722909000000000_7.txt)\n\n📊 实时数据: 显示来自戒指传感器的实时PPG和加速度数据\n  • PPG数据用于心率、血氧等生理参数监测\n  • 加速度数据用于运动状态和姿态检测"
                 android:textSize="10sp"
                 android:textColor="#424242"
                 android:lineSpacingMultiplier="1.2" />

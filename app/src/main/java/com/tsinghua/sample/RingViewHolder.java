@@ -52,13 +52,22 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
     Button requestFileListBtn;
     Button downloadFilesBtn;
 
-    // 新增：时间相关按钮
+    // 时间相关按钮
     Button timeSyncBtn;
     Button timeUpdateBtn;
 
-    // 新增：单个文件下载相关UI
+    // 单个文件下载相关UI
     EditText fileNameInput;
     Button downloadSingleBtn;
+
+    // 新增：主动测量和运动控制UI
+    EditText measurementTimeInput;    // 主动测量时间输入框
+    Button startMeasurementBtn;       // 开始主动测量按钮
+    EditText exerciseDurationInput;   // 运动总时长输入框
+    EditText segmentDurationInput;    // 片段时长输入框
+    Button startExerciseBtn;          // 开始运动按钮
+    Button stopExerciseBtn;           // 结束运动按钮
+    TextView exerciseStatusText;      // 运动状态显示
 
     private BufferedWriter logWriter;
     private boolean isRecordingRing = false;
@@ -168,6 +177,15 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
                         recordLog("识别为时间校准响应");
                         handleTimeSyncResponse(data);
                     }
+                } else if (cmd == 0x38) {
+                    // 新增：运动指令响应
+                    if (subcmd == 0x01) {
+                        recordLog("识别为开始运动响应");
+                        handleStartExerciseResponse(data);
+                    } else if (subcmd == 0x02) {
+                        recordLog("识别为结束运动响应");
+                        handleStopExerciseResponse(data);
+                    }
                 }
             }
 
@@ -198,6 +216,15 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
         fileNameInput = itemView.findViewById(R.id.editText_file_name);
         downloadSingleBtn = itemView.findViewById(R.id.btn_download_single_file);
 
+        // 新增：主动测量和运动控制UI初始化
+        measurementTimeInput = itemView.findViewById(R.id.editText_measurement_time);
+        startMeasurementBtn = itemView.findViewById(R.id.btn_start_measurement);
+        exerciseDurationInput = itemView.findViewById(R.id.editText_exercise_duration);
+        segmentDurationInput = itemView.findViewById(R.id.editText_segment_duration);
+        startExerciseBtn = itemView.findViewById(R.id.btn_start_exercise);
+        stopExerciseBtn = itemView.findViewById(R.id.btn_stop_exercise);
+        exerciseStatusText = itemView.findViewById(R.id.text_exercise_status);
+
         connectBtn.setOnClickListener(v -> connectToDevice(itemView.getContext()));
 
         // 文件操作按钮事件
@@ -218,11 +245,258 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
             });
         }
 
+        // 新增：主动测量和运动控制按钮事件
+        if (startMeasurementBtn != null) {
+            startMeasurementBtn.setOnClickListener(v -> startActiveMeasurement(itemView.getContext()));
+        }
+
+        if (startExerciseBtn != null) {
+            startExerciseBtn.setOnClickListener(v -> startExercise(itemView.getContext()));
+        }
+
+        if (stopExerciseBtn != null) {
+            stopExerciseBtn.setOnClickListener(v -> stopExercise(itemView.getContext()));
+        }
+
         // 初始化图表
         initializePlotViews(itemView);
 
         // 设置NotificationHandler的回调
         setupNotificationCallback();
+
+        // 新增：设置设备指令回调
+        setupDeviceCommandCallback();
+
+        // 初始化UI状态
+        initializeUI();
+    }
+
+    private void setupDeviceCommandCallback() {
+        NotificationHandler.setDeviceCommandCallback(new NotificationHandler.DeviceCommandCallback() {
+            @Override
+            public void sendCommand(byte[] commandData) {
+                // 通过自定义指令发送
+                try {
+                    recordLog("发送设备指令: " + bytesToHexString(commandData));
+                    LmAPI.CUSTOMIZE_CMD(commandData, fileTransferCmdListener);
+                } catch (Exception e) {
+                    recordLog("发送设备指令失败: " + e.getMessage());
+                    e.printStackTrace();
+                }
+            }
+
+            @Override
+            public void onMeasurementStarted() {
+
+            }
+
+            @Override
+            public void onMeasurementStopped() {
+
+            }
+
+            @Override
+            public void onExerciseStarted(int duration, int segmentTime) {
+
+            }
+
+            @Override
+            public void onExerciseStopped() {
+
+            }
+        });
+    }
+
+    // 新增：初始化UI状态
+    private void initializeUI() {
+        // 设置默认值
+        if (measurementTimeInput != null) {
+            measurementTimeInput.setText("30"); // 默认30秒
+        }
+
+        if (exerciseDurationInput != null) {
+            exerciseDurationInput.setText("14400"); // 默认4小时
+        }
+
+        if (segmentDurationInput != null) {
+            segmentDurationInput.setText("600"); // 默认10分钟
+        }
+
+        // 初始状态：结束运动按钮不可用
+        if (stopExerciseBtn != null) {
+            stopExerciseBtn.setEnabled(false);
+        }
+
+        // 显示初始状态
+        updateExerciseStatus("就绪");
+    }
+    private void startActiveMeasurement(Context context) {
+        try {
+            // 获取用户输入的测量时间
+            String timeStr = measurementTimeInput.getText().toString().trim();
+            if (timeStr.isEmpty()) {
+                Toast.makeText(context, "请输入测量时间", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            int measurementTime = Integer.parseInt(timeStr);
+            if (measurementTime < 1 || measurementTime > 3600) {
+                Toast.makeText(context, "测量时间应在1-3600秒之间", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            // 设置测量时间
+            NotificationHandler.setMeasurementTime(measurementTime);
+
+            // 开始测量
+            boolean success = NotificationHandler.startActiveMeasurement();
+            if (success) {
+                recordLog("【开始主动测量】时间: " + measurementTime + "秒");
+                startMeasurementBtn.setText("测量中...");
+                startMeasurementBtn.setEnabled(false);
+
+                // 设置定时器恢复按钮状态
+                mainHandler.postDelayed(() -> {
+                    startMeasurementBtn.setText("开始测量");
+                    startMeasurementBtn.setEnabled(true);
+                }, measurementTime * 1000 + 2000); // 测量时间 + 2秒缓冲
+
+            } else {
+                Toast.makeText(context, "开始测量失败", Toast.LENGTH_SHORT).show();
+            }
+
+        } catch (NumberFormatException e) {
+            Toast.makeText(context, "请输入有效的测量时间", Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            recordLog("开始主动测量失败: " + e.getMessage());
+            Toast.makeText(context, "开始测量失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // 开始运动
+    private void startExercise(Context context) {
+        try {
+            // 获取用户输入的运动参数
+            String durationStr = exerciseDurationInput.getText().toString().trim();
+            String segmentStr = segmentDurationInput.getText().toString().trim();
+
+            if (durationStr.isEmpty() || segmentStr.isEmpty()) {
+                Toast.makeText(context, "请输入运动时长和片段时长", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            int totalDuration = Integer.parseInt(durationStr);
+            int segmentDuration = Integer.parseInt(segmentStr);
+
+            if (totalDuration < 60 || totalDuration > 86400) { // 1分钟到24小时
+                Toast.makeText(context, "运动总时长应在60-86400秒之间", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            if (segmentDuration < 30 || segmentDuration > totalDuration) { // 30秒到总时长
+                Toast.makeText(context, "片段时长应在30秒到总时长之间", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            // 设置运动参数
+            NotificationHandler.setExerciseParams(totalDuration, segmentDuration);
+
+            // 开始运动
+            boolean success = NotificationHandler.startExercise();
+            if (success) {
+                recordLog(String.format("【开始运动】总时长: %d秒, 片段: %d秒", totalDuration, segmentDuration));
+
+                // 更新UI状态
+                startExerciseBtn.setEnabled(false);
+                stopExerciseBtn.setEnabled(true);
+                updateExerciseStatus(String.format("运动中 - 总时长: %d分钟, 片段: %d分钟",
+                        totalDuration/60, segmentDuration/60));
+
+                Toast.makeText(context, "运动开始", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(context, "开始运动失败", Toast.LENGTH_SHORT).show();
+            }
+
+        } catch (NumberFormatException e) {
+            Toast.makeText(context, "请输入有效的数字", Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            recordLog("开始运动失败: " + e.getMessage());
+            Toast.makeText(context, "开始运动失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // 结束运动
+    private void stopExercise(Context context) {
+        try {
+            boolean success = NotificationHandler.stopExercise();
+            if (success) {
+                recordLog("【结束运动】用户手动停止");
+
+                // 更新UI状态
+                startExerciseBtn.setEnabled(true);
+                stopExerciseBtn.setEnabled(false);
+                updateExerciseStatus("已停止");
+
+                Toast.makeText(context, "运动已停止", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(context, "停止运动失败", Toast.LENGTH_SHORT).show();
+            }
+
+        } catch (Exception e) {
+            recordLog("停止运动失败: " + e.getMessage());
+            Toast.makeText(context, "停止运动失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // 更新运动状态显示
+    private void updateExerciseStatus(String status) {
+        if (exerciseStatusText != null) {
+            mainHandler.post(() -> exerciseStatusText.setText("运动状态: " + status));
+        }
+    }
+
+    // 处理开始运动响应
+    private void handleStartExerciseResponse(byte[] data) {
+        try {
+            recordLog("收到开始运动响应");
+
+            if (data.length >= 4) {
+                int frameId = data[1] & 0xFF;
+                recordLog("开始运动响应 Frame ID: 0x" + String.format("%02X", frameId));
+
+                mainHandler.post(() -> {
+                    updateExerciseStatus("运动指令已发送");
+                    Toast.makeText(itemView.getContext(), "运动指令发送成功", Toast.LENGTH_SHORT).show();
+                });
+            }
+
+        } catch (Exception e) {
+            recordLog("处理开始运动响应失败: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    // 处理结束运动响应
+    private void handleStopExerciseResponse(byte[] data) {
+        try {
+            recordLog("收到结束运动响应");
+
+            if (data.length >= 4) {
+                int frameId = data[1] & 0xFF;
+                recordLog("结束运动响应 Frame ID: 0x" + String.format("%02X", frameId));
+
+                mainHandler.post(() -> {
+                    startExerciseBtn.setEnabled(true);
+                    stopExerciseBtn.setEnabled(false);
+                    updateExerciseStatus("运动已结束");
+                    Toast.makeText(itemView.getContext(), "运动结束指令发送成功", Toast.LENGTH_SHORT).show();
+                });
+            }
+
+        } catch (Exception e) {
+            recordLog("处理结束运动响应失败: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 
     private void initializePlotViews(View itemView) {
