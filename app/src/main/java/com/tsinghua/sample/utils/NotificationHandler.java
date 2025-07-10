@@ -93,10 +93,12 @@ public class NotificationHandler {
     // 当前状态跟踪
     private static boolean isMeasuring = false;
     private static boolean isExercising = false;
+    private static boolean isMeasurementOngoing = false; // 新增：区分测量是否正在进行
     private static int currentFrameId = 1;
     private static MeasurementConfig measurementConfig = new MeasurementConfig();
     private static ExerciseConfig exerciseConfig = new ExerciseConfig();
     private static Timer exerciseTimer;
+    private static Timer measurementTimer; // 新增：测量计时器
     private static int currentSegment = 0;
 
     // 设置PlotView的方法
@@ -106,6 +108,7 @@ public class NotificationHandler {
     public static void setPlotViewX(PlotView chartView) { plotViewX = chartView; }
     public static void setPlotViewY(PlotView chartView) { plotViewY = chartView; }
     public static void setPlotViewZ(PlotView chartView) { plotViewZ = chartView; }
+
     public interface LogRecorder {
         void recordLog(String message);
     }
@@ -130,6 +133,7 @@ public class NotificationHandler {
             logRecorder.recordLog("[NH] " + message);
         }
     }
+
     // 设置回调方法
     public static void setFileResponseCallback(FileResponseCallback callback) {
         fileResponseCallback = callback;
@@ -206,8 +210,14 @@ public class NotificationHandler {
             deviceCommandCallback.sendCommand(command);
 
             isMeasuring = true;
+            isMeasurementOngoing = true; // 新增：标记测量正在进行
             deviceCommandCallback.onMeasurementStarted();
 
+            // 新增：启动测量监控计时器（但不自动停止）
+            startMeasurementMonitor(config.collectTime);
+
+            recordLog(String.format("【开始主动测量】%s, 持续时间: %d秒",
+                    config.getCurrentDescription(), config.collectTime));
             Log.i(TAG, String.format("Started active measurement: %s, Duration: %ds",
                     config.getCurrentDescription(), config.collectTime));
             return true;
@@ -218,10 +228,32 @@ public class NotificationHandler {
         }
     }
 
-    // 停止测量
+    // 新增：启动测量监控计时器
+    private static void startMeasurementMonitor(int durationSeconds) {
+        if (measurementTimer != null) {
+            measurementTimer.cancel();
+        }
+
+        measurementTimer = new Timer();
+        measurementTimer.schedule(new TimerTask() {
+            @Override
+            public void run() {
+                // 测量时间到达，但不自动停止，只记录日志
+                recordLog(String.format("【测量时间到达】预设时间 %d 秒已完成，测量仍在继续", durationSeconds));
+                recordLog("可手动点击'停止采集'按钮来结束测量");
+                Log.i(TAG, "Measurement duration completed, but measurement continues until manual stop");
+
+                // 可以在这里发送通知给UI，告知用户测量时间已到
+                // 但不改变isMeasuring状态，让用户手动控制停止
+            }
+        }, durationSeconds * 1000);
+    }
+
+    // 修改：停止测量方法，使用新的停止采集指令
     public static boolean stopMeasurement() {
         if (!isMeasuring) {
             Log.w(TAG, "No measurement in progress");
+            recordLog("【停止测量失败】当前没有正在进行的测量");
             return false;
         }
 
@@ -231,18 +263,27 @@ public class NotificationHandler {
         }
 
         try {
-            // 生成停止指令
-            byte[] command = buildStopMeasurementCommand();
+            // 使用新的停止采集指令 (Cmd=0x3C, Subcmd=0x04)
+            byte[] command = buildStopCollectionCommand();
             deviceCommandCallback.sendCommand(command);
 
+            // 停止测量监控计时器
+            if (measurementTimer != null) {
+                measurementTimer.cancel();
+                measurementTimer = null;
+            }
+
             isMeasuring = false;
+            isMeasurementOngoing = false;
             deviceCommandCallback.onMeasurementStopped();
 
-            Log.i(TAG, "Stopped measurement");
+            recordLog("【手动停止测量】发送停止采集指令");
+            Log.i(TAG, "Stopped measurement manually");
             return true;
 
         } catch (Exception e) {
             Log.e(TAG, "Failed to stop measurement", e);
+            recordLog("【停止测量失败】" + e.getMessage());
             return false;
         }
     }
@@ -433,7 +474,24 @@ public class NotificationHandler {
         return command;
     }
 
-    // 构建停止测量指令
+    // 新增：构建停止采集指令 (基于文档中的新指令格式)
+    private static byte[] buildStopCollectionCommand() {
+        // 心率停止采集指令格式: Frame Type(1) + Frame ID(1) + Cmd(1) + Subcmd(1)
+        // 请求指令：00[FrameID]3C04
+        byte[] command = new byte[4];
+
+        command[0] = 0x00;  // Frame Type
+        command[1] = (byte)(currentFrameId++ & 0xFF);  // Frame ID
+        command[2] = 0x3C;  // Cmd (心率相关指令)
+        command[3] = 0x04;  // Subcmd (停止采集)
+
+        recordLog(String.format("构建停止采集指令: %02X%02X%02X%02X",
+                command[0], command[1], command[2], command[3]));
+        Log.d(TAG, "Built stop collection command (0x3C04)");
+        return command;
+    }
+
+    // 构建停止测量指令（保留原有的，作为备用）
     private static byte[] buildStopMeasurementCommand() {
         // 指令格式: Frame Type(1) + Frame ID(1) + Cmd(1) + Subcmd(1)
         byte[] command = new byte[4];
@@ -441,28 +499,25 @@ public class NotificationHandler {
         command[0] = 0x00;  // Frame Type
         command[1] = (byte)(currentFrameId++ & 0xFF);  // Frame ID
         command[2] = 0x3C;  // Cmd
-        command[3] = 0x04;  // Subcmd (停止)
+        command[3] = 0x02;  // Subcmd (原有的停止指令)
 
-        Log.d(TAG, "Built stop measurement command");
+        Log.d(TAG, "Built stop measurement command (0x3C02)");
         return command;
     }
 
     // 新增：构建开始运动指令
     private static byte[] buildStartExerciseCommand(ExerciseConfig config) {
         // 指令格式: Frame Type(1) + Frame ID(1) + Cmd(1) + Subcmd(1) + Data(10)
-        // 修正1: 总长度应该是14字节，不是12字节
         byte[] command = new byte[14];
 
         command[0] = 0x00;  // Frame Type
-        command[1] = (byte)(68);  // Frame ID (修正2: 使用动态Frame ID，不是固定68)
+        command[1] = (byte)(68);  // Frame ID
         command[2] = 0x38;  // Cmd (运动指令)
         command[3] = 0x01;  // Subcmd (开始运动)
 
-        // 修正3: Data部分应该是10字节，不是8字节
-        // Data结构: sport_mode(2字节) + time(4字节) + slice_storage_time(4字节)
-
-        // sport_mode (2字节) - 对齐Python的sport_mode参数
-        int sportMode = 1; // 默认运动模式，可以根据需要配置
+        // Data部分: sport_mode(2字节) + time(4字节) + slice_storage_time(4字节)
+        // sport_mode (2字节)
+        int sportMode = 1;
         command[4] = (byte)(sportMode & 0xFF);
         command[5] = (byte)((sportMode >> 8) & 0xFF);
 
@@ -483,6 +538,7 @@ public class NotificationHandler {
 
         return command;
     }
+
     // 新增：构建停止运动指令
     private static byte[] buildStopExerciseCommand() {
         // 指令格式: Frame Type(1) + Frame ID(1) + Cmd(1) + Subcmd(1)
@@ -504,6 +560,11 @@ public class NotificationHandler {
 
     public static boolean isExercising() {
         return isExercising;
+    }
+
+    // 新增：获取测量是否正在进行的状态
+    public static boolean isMeasurementOngoing() {
+        return isMeasurementOngoing;
     }
 
     public static int getCurrentSegment() {
@@ -576,7 +637,7 @@ public class NotificationHandler {
         else if (cmd == 0x36) {
             return handleFileOperations(data, frameId, subcmd);
         }
-        // 运动指令处理 (Cmd = 0x38) - 新增
+        // 运动指令处理 (Cmd = 0x38)
         else if (cmd == 0x38) {
             return handleExerciseOperations(data, frameId, subcmd);
         }
@@ -593,7 +654,7 @@ public class NotificationHandler {
     }
 
     /**
-     * 新增：处理运动操作相关的响应 (Cmd = 0x38)
+     * 处理运动操作相关的响应 (Cmd = 0x38)
      */
     private static String handleExerciseOperations(byte[] data, int frameId, int subcmd) {
         Log.d(TAG, String.format("Handling exercise operation: Subcmd=0x%02X", subcmd));
@@ -602,7 +663,7 @@ public class NotificationHandler {
             case 0x01: // 开始运动响应
                 return handleStartExerciseResponse(data, frameId);
 
-            case 0x02: // 停止运动响应
+            case 0x03: // 停止运动响应
                 return handleStopExerciseResponse(data, frameId);
 
             default:
@@ -613,14 +674,14 @@ public class NotificationHandler {
     }
 
     /**
-     * 新增：处理开始运动响应
+     * 处理开始运动响应
      */
     private static String handleStartExerciseResponse(byte[] data, int frameId) {
         Log.d(TAG, "Processing start exercise response");
 
         try {
-            // 运动指令发送成功
             String result = String.format("Start Exercise Response (Frame ID: %d): Command sent successfully", frameId);
+            recordLog("【开始运动响应】指令发送成功");
             Log.i(TAG, result);
             return result;
 
@@ -632,14 +693,14 @@ public class NotificationHandler {
     }
 
     /**
-     * 新增：处理停止运动响应
+     * 处理停止运动响应
      */
     private static String handleStopExerciseResponse(byte[] data, int frameId) {
         Log.d(TAG, "Processing stop exercise response");
 
         try {
-            // 运动停止指令发送成功
             String result = String.format("Stop Exercise Response (Frame ID: %d): Command sent successfully", frameId);
+            recordLog("【停止运动响应】指令发送成功");
             Log.i(TAG, result);
             return result;
 
@@ -851,8 +912,11 @@ public class NotificationHandler {
             case 0x02: // 标准波形响应包
                 return handleStandardWaveformResponse(data, frameId);
 
-            case 0x03: // 停止响应
-                return handleStopResponse(data, frameId);
+            case 0x03: // 停止响应 (修改：处理新的停止采集响应)
+                return handleStopCollectionResponse(data, frameId);
+
+            case 0x04: // 新增：处理停止采集响应 (基于文档中的响应格式)
+                return handleStopCollectionResponse(data, frameId);
 
             case 0xFF: // 进度响应包
                 return handleProgressResponse(data, frameId);
@@ -865,21 +929,36 @@ public class NotificationHandler {
     }
 
     /**
-     * 处理停止响应
+     * 修改：处理停止采集响应 (支持新的Subcmd=0x04)
      */
-    private static String handleStopResponse(byte[] data, int frameId) {
-        Log.d(TAG, "Processing stop response");
+    private static String handleStopCollectionResponse(byte[] data, int frameId) {
+        Log.d(TAG, "Processing stop collection response");
 
         // 更新测量状态
         isMeasuring = false;
+        isMeasurementOngoing = false;
+
+        // 停止测量监控计时器
+        if (measurementTimer != null) {
+            measurementTimer.cancel();
+            measurementTimer = null;
+        }
 
         if (deviceCommandCallback != null) {
             deviceCommandCallback.onMeasurementStopped();
         }
 
-        String result = String.format("Stop Response (Frame ID: %d): Measurement stopped", frameId);
+        String result = String.format("Stop Collection Response (Frame ID: %d): Measurement stopped successfully", frameId);
+        recordLog("【停止采集响应】测量已成功停止");
         Log.i(TAG, result);
         return result;
+    }
+
+    /**
+     * 处理停止响应 (保留原有方法作为兼容)
+     */
+    private static String handleStopResponse(byte[] data, int frameId) {
+        return handleStopCollectionResponse(data, frameId);
     }
 
     /**

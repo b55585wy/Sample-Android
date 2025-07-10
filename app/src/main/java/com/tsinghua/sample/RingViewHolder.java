@@ -81,7 +81,8 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
     Button stopExerciseBtn;
     TextView exerciseStatusText;
     Button formatFileSystemBtn;  // 格式化文件系统按钮
-
+    Button stopCollectionBtn;
+    TextView measurementStatusText;
     private BufferedWriter logWriter;
     private boolean isRecordingRing = false;  // 控制是否记录日志
     private PlotView plotViewG, plotViewI;
@@ -121,7 +122,7 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
             String[] parts = fileName.replace(".bin", "").split("_");
             if (parts.length >= 3) {
                 this.userId = parts[0];
-                this.timestamp =parts[1]+parts[2]+parts[3];
+                this.timestamp = convertUTCToChinaTime(parts[1]+parts[2]+parts[3]);
                 this.fileType = Integer.parseInt(parts[parts.length-1]);
             }
         }
@@ -152,7 +153,39 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
 
 
     }
+    private static String convertUTCToChinaTime(String utcTimeStr) {
+        try {
+            if (utcTimeStr == null || utcTimeStr.length() < 15) {
+                return utcTimeStr; // 格式不正确，返回原始字符串
+            }
 
+            // 解析UTC时间字符串: 20250623:13:31:31
+            String dateStr = utcTimeStr.substring(0, 8);        // 20250623
+            String timeStr = utcTimeStr.substring(9);           // 13:31:31
+
+            String year = dateStr.substring(0, 4);              // 2025
+            String month = dateStr.substring(4, 6);             // 06
+            String day = dateStr.substring(6, 8);               // 23
+
+            // 构建完整的UTC时间字符串
+            String fullUtcTimeStr = String.format("%s-%s-%s %s", year, month, day, timeStr);
+
+            // 解析UTC时间
+            SimpleDateFormat utcFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+            utcFormat.setTimeZone(TimeZone.getTimeZone("UTC"));
+            Date utcDate = utcFormat.parse(fullUtcTimeStr);
+
+            // 转换为中国时间 (UTC+8)
+            SimpleDateFormat chinaFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+            chinaFormat.setTimeZone(TimeZone.getTimeZone("Asia/Shanghai"));
+            String chinaTimeStr = chinaFormat.format(utcDate);
+
+            return chinaTimeStr;
+
+        } catch (Exception e) {
+            return utcTimeStr; // 转换失败，返回原始字符串
+        }
+    }
     // 文件列表适配器
     public class FileListAdapter extends RecyclerView.Adapter<FileListAdapter.FileViewHolder> {
         private List<FileInfo> files;
@@ -343,7 +376,14 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
                     frameType, frameId, cmd, subcmd));
 
             if (frameType == 0x00) {
-                if (cmd == 0x36) {
+                if (cmd == 0x3C) {
+                    // 新增：处理停止采集响应
+                    if (subcmd == 0x04) {
+                        recordLog("识别为停止采集响应");
+                        handleStopCollectionResponse(data);
+                    }
+                }
+                else if (cmd == 0x36) {
                     if (subcmd == 0x10) {
                         recordLog("识别为文件列表响应");
                         handleFileListResponse(data);
@@ -448,6 +488,53 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
             });
         }
     }
+    private void handleStopCollectionResponse(byte[] data) {
+        try {
+            if (data == null || data.length < 4) {
+                recordLog("停止采集响应数据长度不足");
+                return;
+            }
+
+            int frameType = data[0] & 0xFF;
+            int frameId = data[1] & 0xFF;
+            int cmd = data[2] & 0xFF;
+            int subcmd = data[3] & 0xFF;
+
+            recordLog("停止采集响应解析:");
+            recordLog("  - Frame Type: 0x" + String.format("%02X", frameType));
+            recordLog("  - Frame ID: 0x" + String.format("%02X", frameId));
+            recordLog("  - Cmd: 0x" + String.format("%02X", cmd));
+            recordLog("  - Subcmd: 0x" + String.format("%02X", subcmd));
+
+            if (frameType != 0x00 || cmd != 0x3C || subcmd != 0x04) {
+                recordLog("停止采集响应格式错误");
+                return;
+            }
+
+            recordLog("【停止采集响应】: ✅ 设备确认采集已停止");
+
+            mainHandler.post(() -> {
+                // 更新UI状态
+                updateMeasurementUIState(false);
+                updateMeasurementStatus("已停止");
+
+                Toast.makeText(itemView.getContext(),
+                        "✅ 停止采集成功！\n设备已确认停止数据采集",
+                        Toast.LENGTH_LONG).show();
+            });
+
+        } catch (Exception e) {
+            recordLog("解析停止采集响应失败: " + e.getMessage());
+            e.printStackTrace();
+
+            mainHandler.post(() -> {
+                Toast.makeText(itemView.getContext(),
+                        "解析停止采集响应失败: " + e.getMessage(),
+                        Toast.LENGTH_SHORT).show();
+            });
+        }
+    }
+
     public RingViewHolder(View itemView) {
         super(itemView);
 
@@ -459,7 +546,8 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
         connectBtn = itemView.findViewById(R.id.connectBtn);
         requestFileListBtn = itemView.findViewById(R.id.requestFileListBtn);
         downloadSelectedBtn = itemView.findViewById(R.id.downloadSelectedBtn);
-
+        stopCollectionBtn = itemView.findViewById(R.id.btn_stop_collection);
+        measurementStatusText = itemView.findViewById(R.id.text_measurement_status);
         // 文件列表UI初始化
         fileListRecyclerView = itemView.findViewById(R.id.fileListRecyclerView);
         fileListStatusText = itemView.findViewById(R.id.fileListStatusText);
@@ -513,11 +601,22 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
         if (formatFileSystemBtn != null) {
             formatFileSystemBtn.setOnClickListener(v -> formatFileSystem(itemView.getContext()));
         }
+        if (startMeasurementBtn != null) {
+            startMeasurementBtn.setOnClickListener(v -> startActiveMeasurement(itemView.getContext()));
+        }
+
+        // 新增：停止采集按钮事件
+        if (stopCollectionBtn != null) {
+            stopCollectionBtn.setOnClickListener(v -> stopActiveMeasurement(itemView.getContext()));
+        }
+
         // 初始化文件列表
         initializeFileList();
         initializePlotViews(itemView);
         setupNotificationCallback();
         setupDeviceCommandCallback();
+        updateMeasurementUIState(false);
+
         initializeUI();
     }
     public void formatFileSystem(Context context) {
@@ -666,16 +765,20 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
                 }
             }
 
+
             @Override
             public void onMeasurementStarted() {
-                recordLog("【测量开始】");
+                recordLog("【测量开始回调】");
+                updateMeasurementUIState(true);
+                updateMeasurementStatus("数据采集中");
             }
 
             @Override
             public void onMeasurementStopped() {
-                recordLog("【测量停止】");
+                recordLog("【测量停止回调】");
+                updateMeasurementUIState(false);
+                updateMeasurementStatus("就绪");
             }
-
             @Override
             public void onExerciseStarted(int duration, int segmentTime) {
                 recordLog(String.format("【运动开始】总时长: %d秒, 片段: %d秒", duration, segmentTime));
@@ -701,11 +804,12 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
             segmentDurationInput.setText("600");
         }
 
-        if (stopExerciseBtn != null) {
-        }
-
+        // 新增：初始化测量状态
+        updateMeasurementUIState(false);
+        updateMeasurementStatus("就绪");
         updateExerciseStatus("就绪");
     }
+
 
     // ==================== 修改后的录制控制逻辑 ====================
 
@@ -727,6 +831,9 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
                 recordLog("【开始录制会话】时间: " + getCurrentTimestamp());
                 recordLog("设备: " + deviceName.getText());
                 recordLog("=".repeat(50));
+
+                // 重置测量状态
+                updateMeasurementStatus("录制中 - 就绪");
 
                 Toast.makeText(context, "开始录制日志", Toast.LENGTH_SHORT).show();
 
@@ -751,15 +858,41 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
             isRecordingRing = false;
             startBtn.setText("开始录制");
 
+            // 如果正在测量，提醒用户
+            if (NotificationHandler.isMeasuring()) {
+                recordLog("注意：录制会话已结束，但测量仍在继续");
+                updateMeasurementStatus("测量中 - 录制已停止");
+
+                mainHandler.post(() -> {
+                    Toast.makeText(itemView.getContext(),
+                            "录制已停止\n注意：测量仍在继续，请手动停止采集",
+                            Toast.LENGTH_LONG).show();
+                });
+            } else {
+                updateMeasurementStatus("就绪");
+            }
+
             try {
                 if (logWriter != null) {
                     logWriter.close();
                     logWriter = null;
                 }
-                Toast.makeText(itemView.getContext(), "录制已停止", Toast.LENGTH_SHORT).show();
             } catch (IOException e) {
                 e.printStackTrace();
             }
+        }
+    }
+    public boolean isCurrentlyMeasuring() {
+        return NotificationHandler.isMeasuring();
+    }
+    public void refreshMeasurementUIState() {
+        boolean isMeasuring = NotificationHandler.isMeasuring();
+        updateMeasurementUIState(isMeasuring);
+
+        if (isMeasuring) {
+            updateMeasurementStatus("测量中");
+        } else {
+            updateMeasurementStatus("就绪");
         }
     }
 
@@ -1144,11 +1277,14 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
             boolean success = NotificationHandler.startActiveMeasurement();
             if (success) {
                 recordLog("【开始主动测量】时间: " + measurementTime + "秒");
-                startMeasurementBtn.setText("测量中...");
 
-                mainHandler.postDelayed(() -> {
-                    startMeasurementBtn.setText("开始测量");
-                }, measurementTime * 1000 + 2000);
+                // 更新UI状态：测量开始
+                updateMeasurementUIState(true);
+                updateMeasurementStatus("测量中...");
+
+                Toast.makeText(context, "测量开始，可随时点击'停止采集'结束", Toast.LENGTH_SHORT).show();
+
+                // 注意：不再设置自动停止的延时任务，让用户手动控制
 
             } else {
                 Toast.makeText(context, "开始测量失败", Toast.LENGTH_SHORT).show();
@@ -1162,8 +1298,57 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
         }
     }
 
-    // ==================== 运动控制功能 ====================
 
+    // ==================== 运动控制功能 ====================
+    void stopActiveMeasurement(Context context) {
+        try {
+            if (!NotificationHandler.isMeasuring()) {
+                Toast.makeText(context, "当前没有正在进行的测量", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            boolean success = NotificationHandler.stopMeasurement();
+            if (success) {
+                recordLog("【手动停止测量】用户点击停止采集按钮");
+
+                // 更新UI状态：测量停止
+                updateMeasurementUIState(false);
+                updateMeasurementStatus("已停止");
+
+                Toast.makeText(context, "测量已停止", Toast.LENGTH_SHORT).show();
+
+            } else {
+                Toast.makeText(context, "停止测量失败", Toast.LENGTH_SHORT).show();
+            }
+
+        } catch (Exception e) {
+            recordLog("停止测量失败: " + e.getMessage());
+            Toast.makeText(context, "停止测量失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    // 新增：更新测量UI状态
+    private void updateMeasurementUIState(boolean isMeasuring) {
+        mainHandler.post(() -> {
+            if (startMeasurementBtn != null) {
+                startMeasurementBtn.setEnabled(!isMeasuring);
+                startMeasurementBtn.setText(isMeasuring ? "测量中..." : "开始测量");
+            }
+
+            if (stopCollectionBtn != null) {
+                stopCollectionBtn.setEnabled(isMeasuring);
+                stopCollectionBtn.setBackgroundColor(isMeasuring ?
+                        Color.parseColor("#F44336") : Color.GRAY);
+            }
+        });
+    }
+
+    // 新增：更新测量状态文本
+    private void updateMeasurementStatus(String status) {
+        if (measurementStatusText != null) {
+            mainHandler.post(() -> measurementStatusText.setText("测量状态: " + status));
+        }
+    }
     void startExercise(Context context) {
         try {
             String durationStr = exerciseDurationInput.getText().toString().trim();
@@ -1547,14 +1732,8 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
                     writer.write("# 总包数: " + totalPackets + "\n");
                     writer.write("# ================================\n\n");
                 }
-
                 writer.write("# 数据包 " + currentPacket + "/" + totalPackets + ":\n");
                 writer.write("# 原始数据: " + bytesToHexString(data) + "\n");
-
-                if (fileInfo.fileType == 7) {
-                    parseType7DataForFile(data, writer);
-                }
-
                 writer.write("\n");
                 writer.flush();
             }
