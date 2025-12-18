@@ -1,79 +1,66 @@
 package com.tsinghua.sample;
 
-import android.content.Context;
-import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
-import androidx.cardview.widget.CardView;
-import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.tsinghua.sample.activity.EcgSettingsActivity;
 import com.vivalnk.sdk.model.Device;
 
-import java.util.ArrayList;
 import java.util.List;
 
-public class EcgAdapter extends RecyclerView.Adapter<EcgAdapter.DeviceViewHolder> {
-    private Context context;
-    private ArrayList<Device> devices;
-    private List<Device> selectedDevices; // 👈 选中的设备列表
+/**
+ * 设置页心电设备列表适配器（简化版）
+ * 仅负责展示扫描到的设备，点击即选中并回调到 EcgSettingsActivity
+ */
+public class EcgAdapter extends RecyclerView.Adapter<EcgAdapter.ViewHolder> {
+    private final EcgSettingsActivity activity;
+    private final List<Device> devices;
+    private final List<Device> selected;
 
-    public EcgAdapter(Context context, ArrayList<Device> devices, List<Device> selectedDevices) {
-        this.context = context;
+    public EcgAdapter(EcgSettingsActivity activity, List<Device> devices, List<Device> selected) {
+        this.activity = activity;
         this.devices = devices;
-        this.selectedDevices = selectedDevices;
+        this.selected = selected;
     }
 
     @NonNull
     @Override
-    public DeviceViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-        View view = LayoutInflater.from(context).inflate(R.layout.item_ecg_device, parent, false);
-        return new DeviceViewHolder(view);
+    public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+        View v = LayoutInflater.from(parent.getContext())
+                .inflate(R.layout.item_ecg_device, parent, false);
+        return new ViewHolder(v);
     }
 
     @Override
-    public void onBindViewHolder(@NonNull DeviceViewHolder holder, int position) {
-        Device device = devices.get(position);
-
-        holder.deviceName.setText(device.getName());
-        holder.deviceMAC.setText(device.getId());
-
-        boolean isSelected = selectedDevices.contains(device);
-
-        // 背景色
-        int bgColor   = ContextCompat.getColor(context,
-                isSelected ? R.color.ecgPrimary : R.color.ecgSurface);
-        holder.rootCard.setCardBackgroundColor(bgColor);
-
-        // 字体颜色
-        int textColor = ContextCompat.getColor(context,
-                isSelected ? R.color.ecgOnPrimary : R.color.ecgOnSurface);
-        holder.deviceName.setTextColor(textColor);
-        holder.deviceMAC.setTextColor(textColor);
-
-        holder.itemView.setOnClickListener(v ->
-                ((EcgSettingsActivity) context).onDeviceSelected(device));
+    public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
+        Device d = devices.get(position);
+        holder.name.setText(d.getName());
+        holder.mac.setText(d.getId());
+        holder.itemView.setOnClickListener(v -> {
+            activity.onDeviceSelected(d);
+            Toast.makeText(activity, "已选择 " + d.getName(), Toast.LENGTH_SHORT).show();
+        });
     }
 
     @Override
     public int getItemCount() {
-        return devices.size(); // ✅ 用 devices.size()
+        return devices == null ? 0 : devices.size();
     }
 
-    public static class DeviceViewHolder extends RecyclerView.ViewHolder {
-        CardView rootCard;          // ⭐ 新成员
-        TextView deviceName, deviceMAC;
+    static class ViewHolder extends RecyclerView.ViewHolder {
+        final TextView name;
+        final TextView mac;
 
-        public DeviceViewHolder(View itemView) {
+        ViewHolder(@NonNull View itemView) {
             super(itemView);
-            rootCard   = itemView.findViewById(R.id.rootCard);
-            deviceName = itemView.findViewById(R.id.deviceName);
-            deviceMAC  = itemView.findViewById(R.id.deviceMAC);
+            name = itemView.findViewById(R.id.deviceName);
+            mac = itemView.findViewById(R.id.deviceMAC);
         }
     }
 }

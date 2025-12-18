@@ -22,9 +22,10 @@ public class OximeterService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
-        Log.e("OximeterService","onCreate");
-        manager = new OximeterManager(this);
-        manager.connectAndStart();
+        Log.d("OximeterService", "onCreate - 初始化 OximeterManager");
+        // 只初始化 Manager，不自动连接
+        // 连接由 ListActivity 在获得 USB 权限后通过 checkOximeterUsbPermission() 控制
+        manager = OximeterManager.getInstance(this);
     }
 
     public void setListener(OximeterDataListener listener) {

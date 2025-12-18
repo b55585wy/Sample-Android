@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.pm.PackageManager;
 import android.hardware.camera2.*;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.util.Log;
 import android.view.Surface;
 import android.view.SurfaceHolder;
@@ -32,6 +33,14 @@ public class CameraHelper {
     private boolean frontPreviewReady = false;
     private boolean backPreviewReady = false;
 
+    // 后台Handler线程，避免在主线程进行相机操作
+    private HandlerThread cameraThread;
+    private Handler cameraHandler;
+
+    // 标记Surface是否已经添加了Callback
+    private boolean frontCallbackAdded = false;
+    private boolean backCallbackAdded = false;
+
     public boolean isFrontPreviewReady() {
         return frontPreviewReady;
     }
@@ -41,6 +50,7 @@ public class CameraHelper {
     }
 
     public CameraHelper(Context context, SurfaceView surfaceViewFront, SurfaceView surfaceViewBack) {
+        Log.d(TAG, "CameraHelper constructor: front=" + surfaceViewFront + ", back=" + surfaceViewBack);
         this.context = context;
         this.surfaceViewFront = surfaceViewFront;
         this.surfaceViewBack = surfaceViewBack;
@@ -49,14 +59,39 @@ public class CameraHelper {
 
         this.cameraManager = (CameraManager) context.getSystemService(Context.CAMERA_SERVICE);
 
-        if (surfaceViewFront != null) {
-            surfaceViewFront.getHolder().addCallback(surfaceCallbackFront);
-        }
-        if (surfaceViewBack != null) {
-            surfaceViewBack.getHolder().addCallback(surfaceCallbackBack);
-        }
-        initializeCameras();
+        // 创建后台线程
+        cameraThread = new HandlerThread("CameraThread");
+        cameraThread.start();
+        cameraHandler = new Handler(cameraThread.getLooper());
 
+        // 先初始化相机ID
+        initializeCameras();
+        Log.d(TAG, "Camera IDs initialized: front=" + cameraIdFront + ", back=" + cameraIdBack);
+
+        if (surfaceViewFront != null && !frontCallbackAdded) {
+            Log.d(TAG, "Adding front surface callback");
+            surfaceViewFront.getHolder().addCallback(surfaceCallbackFront);
+            frontCallbackAdded = true;
+            // 检查Surface是否已存在（RecyclerView中SurfaceView可能已经创建）
+            Surface surface = surfaceViewFront.getHolder().getSurface();
+            Log.d(TAG, "Front surface check: surface=" + surface + ", isValid=" + (surface != null && surface.isValid()));
+            if (surface != null && surface.isValid()) {
+                Log.d(TAG, "Front Surface already exists, opening camera directly");
+                openCamera(cameraIdFront, true);
+            } else {
+                Log.d(TAG, "Front Surface not ready, waiting for surfaceCreated callback");
+            }
+        }
+        if (surfaceViewBack != null && !backCallbackAdded) {
+            surfaceViewBack.getHolder().addCallback(surfaceCallbackBack);
+            backCallbackAdded = true;
+            // 检查Surface是否已存在
+            Surface surface = surfaceViewBack.getHolder().getSurface();
+            if (surface != null && surface.isValid()) {
+                Log.d(TAG, "Back Surface already exists, opening camera directly");
+                openCamera(cameraIdBack, false);
+            }
+        }
     }
 
     private void initializeCameras() {
@@ -80,15 +115,34 @@ public class CameraHelper {
     private final SurfaceHolder.Callback surfaceCallbackFront = new SurfaceHolder.Callback() {
         @Override
         public void surfaceCreated(SurfaceHolder holder) {
-            openCamera(cameraIdFront, true);
-
+            Log.d(TAG, "Front surface created, isRecording=" + isRecordingFront);
+            if (isRecordingFront) {
+                // 录制中Surface重新创建，尝试恢复预览
+                // 注意：MediaRecorder已经在运行，只需要重新启动预览请求
+                Log.d(TAG, "Surface recreated during recording, attempting to restore preview");
+                if (cameraDeviceFront != null && holder.getSurface() != null && holder.getSurface().isValid()) {
+                    // 重新配置预览会话（录制会话由RecorderHelper管理）
+                    restorePreviewDuringRecording(cameraDeviceFront, holder.getSurface(), true);
+                }
+            } else {
+                openCamera(cameraIdFront, true);
+            }
         }
-        public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {}
+        public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+            Log.d(TAG, "Front surface changed: " + width + "x" + height);
+        }
         public void surfaceDestroyed(SurfaceHolder holder) {
-            if (cameraDeviceFront != null) {
-                cameraDeviceFront.close();
-                cameraDeviceFront = null;
-                frontPreviewReady = false;
+            Log.d(TAG, "Front surface destroyed, isRecording=" + isRecordingFront);
+            // 只有在非录制状态时才关闭相机
+            // 录制时保持相机打开，避免录制中断
+            if (!isRecordingFront) {
+                if (cameraDeviceFront != null) {
+                    cameraDeviceFront.close();
+                    cameraDeviceFront = null;
+                    frontPreviewReady = false;
+                }
+            } else {
+                Log.d(TAG, "Surface destroyed during recording, keeping camera open");
             }
         }
     };
@@ -96,35 +150,93 @@ public class CameraHelper {
     private final SurfaceHolder.Callback surfaceCallbackBack = new SurfaceHolder.Callback() {
         @Override
         public void surfaceCreated(SurfaceHolder holder) {
-            openCamera(cameraIdBack, false);
-
+            Log.d(TAG, "Back surface created, isRecording=" + isRecordingBack);
+            if (isRecordingBack) {
+                Log.d(TAG, "Surface recreated during recording, attempting to restore preview");
+                if (cameraDeviceBack != null && holder.getSurface() != null && holder.getSurface().isValid()) {
+                    restorePreviewDuringRecording(cameraDeviceBack, holder.getSurface(), false);
+                }
+            } else {
+                openCamera(cameraIdBack, false);
+            }
         }
-        public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {}
+        public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+            Log.d(TAG, "Back surface changed: " + width + "x" + height);
+        }
         public void surfaceDestroyed(SurfaceHolder holder) {
-            if (cameraDeviceBack != null) {
-                cameraDeviceBack.close();
-                cameraDeviceBack = null;
-                backPreviewReady = false;
+            Log.d(TAG, "Back surface destroyed, isRecording=" + isRecordingBack);
+            // 只有在非录制状态时才关闭相机
+            if (!isRecordingBack) {
+                if (cameraDeviceBack != null) {
+                    cameraDeviceBack.close();
+                    cameraDeviceBack = null;
+                    backPreviewReady = false;
+                }
+            } else {
+                Log.d(TAG, "Surface destroyed during recording, keeping camera open");
             }
         }
     };
     // endregion
 
-    private void openCamera(String cameraId, boolean isFront) {
+    /**
+     * 在录制过程中恢复预览显示
+     * 由于MediaRecorder已经在运行，这里只创建一个简单的预览请求
+     */
+    private void restorePreviewDuringRecording(CameraDevice device, Surface surface, boolean isFront) {
+        if (device == null || surface == null || !surface.isValid()) {
+            Log.w(TAG, "Cannot restore preview: invalid device or surface");
+            return;
+        }
         try {
-            if (ActivityCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return;
+            // 获取当前录制会话并添加预览目标
+            CameraCaptureSession session = isFront ? captureSessionFront : captureSessionBack;
+            if (session != null) {
+                CaptureRequest.Builder builder = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+                builder.addTarget(surface);
+                // 尝试用单独的预览请求，不干扰录制
+                session.capture(builder.build(), null, cameraHandler);
+                Log.d(TAG, "Preview restore request sent for " + (isFront ? "front" : "back"));
+            }
+        } catch (CameraAccessException e) {
+            Log.e(TAG, "Failed to restore preview during recording", e);
+        } catch (IllegalStateException e) {
+            Log.w(TAG, "Session not ready for preview restore", e);
+        }
+    }
+
+    private void openCamera(String cameraId, boolean isFront) {
+        Log.d(TAG, "openCamera called: cameraId=" + cameraId + ", isFront=" + isFront);
+        if (cameraId == null) {
+            Log.e(TAG, "Camera ID is null for " + (isFront ? "front" : "back"));
+            return;
+        }
+        try {
+            if (ActivityCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                Log.e(TAG, "Camera permission not granted!");
+                return;
+            }
+            Log.d(TAG, "Opening camera: " + cameraId);
             cameraManager.openCamera(cameraId, new CameraDevice.StateCallback() {
                 @Override
                 public void onOpened(@NonNull CameraDevice camera) {
+                    Log.d(TAG, (isFront ? "Front" : "Back") + " camera opened");
                     if (isFront) {
                         cameraDeviceFront = camera;
-                        startPreview(cameraDeviceFront, surfaceViewFront.getHolder().getSurface(), true);
+                        if (surfaceViewFront != null && surfaceViewFront.getHolder().getSurface() != null
+                                && surfaceViewFront.getHolder().getSurface().isValid()) {
+                            startPreview(cameraDeviceFront, surfaceViewFront.getHolder().getSurface(), true);
+                        }
                     } else {
                         cameraDeviceBack = camera;
-                        startPreview(cameraDeviceBack, surfaceViewBack.getHolder().getSurface(), false);
+                        if (surfaceViewBack != null && surfaceViewBack.getHolder().getSurface() != null
+                                && surfaceViewBack.getHolder().getSurface().isValid()) {
+                            startPreview(cameraDeviceBack, surfaceViewBack.getHolder().getSurface(), false);
+                        }
                     }
                 }
                 public void onDisconnected(@NonNull CameraDevice camera) {
+                    Log.w(TAG, (isFront ? "Front" : "Back") + " camera disconnected");
                     camera.close();
                     if (isFront) {
                         cameraDeviceFront = null;
@@ -135,6 +247,7 @@ public class CameraHelper {
                     }
                 }
                 public void onError(@NonNull CameraDevice camera, int error) {
+                    Log.e(TAG, "Camera error: " + error + " for " + (isFront ? "front" : "back") + " camera");
                     camera.close();
                     if (isFront) {
                         cameraDeviceFront = null;
@@ -143,15 +256,18 @@ public class CameraHelper {
                         cameraDeviceBack = null;
                         backPreviewReady = false;
                     }
-                    Log.e(TAG, "Camera error: " + error + " for " + (isFront ? "front" : "back") + " camera");
                 }
-            }, null);
+            }, cameraHandler);
         } catch (CameraAccessException e) {
-            e.printStackTrace();
+            Log.e(TAG, "Failed to open camera", e);
         }
     }
 
     void startPreview(CameraDevice device, Surface surface, boolean isFront) {
+        if (device == null || surface == null || !surface.isValid()) {
+            Log.e(TAG, "Cannot start preview: device=" + device + ", surface valid=" + (surface != null && surface.isValid()));
+            return;
+        }
         try {
             device.createCaptureSession(Arrays.asList(surface), new CameraCaptureSession.StateCallback() {
                 @Override
@@ -159,7 +275,7 @@ public class CameraHelper {
                     try {
                         CaptureRequest.Builder builder = device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
                         builder.addTarget(surface);
-                        session.setRepeatingRequest(builder.build(), null, null);
+                        session.setRepeatingRequest(builder.build(), null, cameraHandler);
                         if (isFront) {
                             captureSessionFront = session;
                             frontPreviewReady = true;
@@ -170,7 +286,7 @@ public class CameraHelper {
                             Log.d(TAG, "Back camera preview ready");
                         }
                     } catch (CameraAccessException e) {
-                        e.printStackTrace();
+                        Log.e(TAG, "Failed to start preview request", e);
                     }
                 }
 
@@ -182,9 +298,9 @@ public class CameraHelper {
                         backPreviewReady = false;
                     }
                 }
-            }, null);
+            }, cameraHandler);
         } catch (CameraAccessException e) {
-            e.printStackTrace();
+            Log.e(TAG, "Failed to create capture session", e);
             if (isFront) {
                 frontPreviewReady = false;
             } else {
@@ -207,10 +323,11 @@ public class CameraHelper {
         }
 
         try {
+            isRecordingFront = true;  // 先设置标记，防止surfaceDestroyed关闭相机
             recorderHelperFront.setupFrontRecording();
-            isRecordingFront = true;
             Log.d(TAG, "Front recording started successfully");
         } catch (Exception e) {
+            isRecordingFront = false;
             Log.e(TAG, "Failed to start front recording", e);
             throw e;
         }
@@ -228,10 +345,11 @@ public class CameraHelper {
         }
 
         try {
+            isRecordingBack = true;  // 先设置标记
             recorderHelperBack.setupBackRecording();
-            isRecordingBack = true;
             Log.d(TAG, "Back recording started successfully");
         } catch (Exception e) {
+            isRecordingBack = false;
             Log.e(TAG, "Failed to start back recording", e);
             throw e;
         }
@@ -239,26 +357,47 @@ public class CameraHelper {
 
     public void stopFrontRecording() {
         if (!isRecordingFront || recorderHelperFront == null) return;
+
+        Log.d(TAG, "Stopping front recording");
         recorderHelperFront.stopFrontRecording();
-        if (surfaceViewFront != null && cameraDeviceFront != null) {
-            startPreview(cameraDeviceFront, surfaceViewFront.getHolder().getSurface(), true);
-        }
         isRecordingFront = false;
+
+        // 录制停止后，如果Surface仍然有效，重新启动预览
+        if (surfaceViewFront != null && cameraDeviceFront != null) {
+            Surface surface = surfaceViewFront.getHolder().getSurface();
+            if (surface != null && surface.isValid()) {
+                startPreview(cameraDeviceFront, surface, true);
+            }
+        }
         Log.d(TAG, "Front recording stopped");
     }
 
     public void stopBackRecording() {
         if (!isRecordingBack || recorderHelperBack == null) return;
+
+        Log.d(TAG, "Stopping back recording");
         recorderHelperBack.stopBackRecording();
-        if (surfaceViewBack != null && cameraDeviceBack != null) {
-            startPreview(cameraDeviceBack, surfaceViewBack.getHolder().getSurface(), false);
-        }
         isRecordingBack = false;
+
+        // 录制停止后，如果Surface仍然有效，重新启动预览
+        if (surfaceViewBack != null && cameraDeviceBack != null) {
+            Surface surface = surfaceViewBack.getHolder().getSurface();
+            if (surface != null && surface.isValid()) {
+                startPreview(cameraDeviceBack, surface, false);
+            }
+        }
         Log.d(TAG, "Back recording stopped");
     }
 
     public boolean isFrontCameraReady() {
-        return frontPreviewReady && cameraDeviceFront != null && surfaceViewFront != null;
+        boolean ready = frontPreviewReady && cameraDeviceFront != null && surfaceViewFront != null;
+        // 每10次检查打印一次状态，避免日志过多
+        if (!ready) {
+            Log.d(TAG, "isFrontCameraReady: frontPreviewReady=" + frontPreviewReady
+                    + ", cameraDeviceFront=" + (cameraDeviceFront != null)
+                    + ", surfaceViewFront=" + (surfaceViewFront != null));
+        }
+        return ready;
     }
 
     public boolean isBackCameraReady() {
@@ -294,6 +433,17 @@ public class CameraHelper {
 
     // 释放资源
     public void release() {
+        Log.d(TAG, "Releasing camera resources");
+
+        // 先停止录制
+        if (isRecordingFront) {
+            stopFrontRecording();
+        }
+        if (isRecordingBack) {
+            stopBackRecording();
+        }
+
+        // 关闭相机
         if (cameraDeviceFront != null) {
             cameraDeviceFront.close();
             cameraDeviceFront = null;
@@ -302,6 +452,19 @@ public class CameraHelper {
             cameraDeviceBack.close();
             cameraDeviceBack = null;
         }
+
+        // 停止后台线程
+        if (cameraThread != null) {
+            cameraThread.quitSafely();
+            try {
+                cameraThread.join();
+            } catch (InterruptedException e) {
+                Log.e(TAG, "Interrupted while waiting for camera thread", e);
+            }
+            cameraThread = null;
+            cameraHandler = null;
+        }
+
         frontPreviewReady = false;
         backPreviewReady = false;
         isRecordingFront = false;

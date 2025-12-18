@@ -8,7 +8,6 @@ import android.content.SharedPreferences;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
-import android.os.Environment;
 import android.util.Log;
 
 
@@ -16,8 +15,12 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 
+import com.tsinghua.sample.core.SessionManager;
+import com.tsinghua.sample.core.TimeSync;
+
 public class MultiMicAudioRecorderHelper {
 
+    private static final String TAG = "MultiMicAudioRecorder";
     private static final int SAMPLE_RATE_IN_HZ = 44100;  // 采样率 44.1kHz
     private static final int CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_STEREO;
     private static final int AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT;  // 16-bit 编码格式
@@ -36,6 +39,9 @@ public class MultiMicAudioRecorderHelper {
     }
     // 方法：开始录音
     public void startRecording() {
+        // 验证时间同步状态
+        TimeSync.logTimestampStatus("Audio");
+
         // 获取最小缓冲区大小
         int bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE_IN_HZ, CHANNEL_CONFIG, AUDIO_FORMAT);
         if (bufferSize == AudioRecord.ERROR_BAD_VALUE || bufferSize == AudioRecord.ERROR) {
@@ -59,18 +65,13 @@ public class MultiMicAudioRecorderHelper {
                     bufferSize
             );
 
-            // 获取实验ID并设置文件存储路径
+            // 统一会话目录
             SharedPreferences prefs = context.getSharedPreferences("AppSettings", MODE_PRIVATE);
             String experimentId = prefs.getString("experiment_id", "default");
-            String dirPath = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
-                    + "/Sample/" + experimentId + "/";
-            File dir = new File(dirPath);
-            if (!dir.exists()) dir.mkdirs();  // 确保目录存在
-
-            // 生成一个新的输出目录
-            String timestamp = generateTimestamp();
-            outputDirectory = new File(dir, "Sample_MIC_" + timestamp);
-            if (!outputDirectory.exists()) outputDirectory.mkdirs();
+            outputDirectory = SessionManager.getInstance().ensureSession(context, experimentId);
+            if (outputDirectory == null) throw new IOException("session dir null");
+            outputDirectory = SessionManager.getInstance().subDir("audio");
+            if (outputDirectory != null && !outputDirectory.exists()) outputDirectory.mkdirs();
 
             // 创建文件输出流，用于存储音频数据
             fos1 = new FileOutputStream(new File(outputDirectory, "mic1_audio_record.pcm"));
@@ -125,17 +126,6 @@ public class MultiMicAudioRecorderHelper {
                     timestampFos2.close();
                 }
 
-                // 移动文件到输出目录
-                File mic1AudioFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "mic1_audio_record.pcm");
-                File mic2AudioFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "mic2_audio_record.pcm");
-                File mic1TimestampFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "mic1_timestamp.txt");
-                File mic2TimestampFile = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "mic2_timestamp.txt");
-
-                // 移动音频和时间戳文件到输出目录
-                moveFileToDirectory(mic1AudioFile, outputDirectory);
-                moveFileToDirectory(mic2AudioFile, outputDirectory);
-                moveFileToDirectory(mic1TimestampFile, outputDirectory);
-                moveFileToDirectory(mic2TimestampFile, outputDirectory);
             } catch (IOException | InterruptedException e) {
                 e.printStackTrace();
             }
@@ -165,8 +155,8 @@ public class MultiMicAudioRecorderHelper {
                 bytesRead = audioRecord.read(buffer, 0, buffer.length);
                 if (bytesRead > 0 && fos != null) {
                     try {
-                        long timestamp = System.currentTimeMillis();;  // 获取当前时间戳
-                        timestampFos.write(("" + timestamp + "\n").getBytes());  // 写入时间戳到文件
+                        long timestamp = TimeSync.nowWallMillis();  // 统一 wall 毫秒
+                        timestampFos.write((timestamp + "\n").getBytes());  // 写入时间戳到文件
 
                         fos.write(buffer, 0, bytesRead);  // 写入音频数据到文件
 
@@ -177,20 +167,6 @@ public class MultiMicAudioRecorderHelper {
             }
         }
 
-    }
-
-    // 获取文件路径
-    private void moveFileToDirectory(File sourceFile, File destinationDir) {
-        if (sourceFile.exists()) {
-            File destinationFile = new File(destinationDir, sourceFile.getName());
-            if (sourceFile.renameTo(destinationFile)) {
-                Log.d("AudioRecorder", "Moved file to: " + destinationFile.getAbsolutePath());
-            } else {
-                Log.e("AudioRecorder", "Failed to move file: " + sourceFile.getAbsolutePath());
-            }
-        } else {
-            Log.e("AudioRecorder", "Source file doesn't exist: " + sourceFile.getAbsolutePath());
-        }
     }
 
     // 时间戳生成方法

@@ -1,467 +1,295 @@
 package com.tsinghua.sample;
 
-import android.app.Activity;
-import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.graphics.Color;
-import android.os.Environment;
-import android.text.TextUtils;
-import android.util.Log;
+import android.graphics.PorterDuff;
+import android.graphics.drawable.Drawable;
 import android.view.LayoutInflater;
 import android.view.View;
-import android.view.ViewGroup;
-import android.widget.Button;
-import android.widget.EditText;
-import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.tsinghua.sample.utils.NotificationHandler;
-import com.vivalnk.sdk.Callback;
-import com.vivalnk.sdk.CommandRequest;
-import com.vivalnk.sdk.DataReceiveListener;
-import com.vivalnk.sdk.SampleDataReceiveListener;
-import com.vivalnk.sdk.VitalClient;
+import com.google.android.material.button.MaterialButton;
+import com.tsinghua.sample.core.SessionManager;
+import com.tsinghua.sample.core.TimeSync;
+import com.tsinghua.sample.ecg.ECGMeasurementController;
 import com.vivalnk.sdk.ble.BluetoothConnectListener;
-import com.vivalnk.sdk.command.base.CommandType;
-import com.vivalnk.sdk.common.ble.connect.BleConnectOptions;
-import com.vivalnk.sdk.device.vv330.VV330Manager;
+import com.vivalnk.sdk.ble.BluetoothScanListener;
 import com.vivalnk.sdk.model.Device;
 import com.vivalnk.sdk.model.Motion;
-import com.vivalnk.sdk.model.SampleData;
-import com.vivalnk.sdk.utils.GSON;
 
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.net.URLEncoder;
-import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 
+/**
+ * 心电设备卡片 ViewHolder（完全重写版本）
+ * - 卡片内完成扫描、连接、实时数据显示
+ * - 支持手动开始/结束录制（与一键录制复用同一控制器）
+ */
 public class EcgViewHolder extends RecyclerView.ViewHolder {
 
-    TextView deviceName;
-    ImageButton settingsBtn;
-    LinearLayout deviceContainer;  // 展开的子设备区域
-    private boolean infoVisible = false; // 控制展开收起状态
+    final TextView deviceName;
+    private final TextView statusText;
+    private final ImageView expandArrow;
+    private final LinearLayout deviceContainer;
+    private final MaterialButton scanBtn;
+    private final MaterialButton disconnectBtn;
+    private final LinearLayout scannedDeviceContainer;
+    private final LinearLayout scannedDeviceList;
+    private final LinearLayout deviceListContainer;
 
-    public EcgViewHolder(View itemView) {
+    // 连接后子视图
+    private TextView tvMac;
+    private TextView tvBattery;
+    private View leadIndicator;
+    private TextView tvLeadStatus;
+    private TextView tvHeartRate;
+    private TextView tvRespRate;
+    private TextView tvMeasurementStatus;
+    private MaterialButton toggleSamplingBtn;
+    private PlotView ecgPlot;
+    private TextView tvLog;
+
+    private boolean expanded = true;
+    private boolean initialized = false;
+    private boolean manualRecording = false;
+    private Device currentDevice;
+
+    private ECGMeasurementController controller;
+    private Context ctx;
+
+    public EcgViewHolder(@NonNull View itemView) {
         super(itemView);
-
         deviceName = itemView.findViewById(R.id.deviceName);
+        statusText = itemView.findViewById(R.id.statusText);
+        expandArrow = itemView.findViewById(R.id.expandArrow);
         deviceContainer = itemView.findViewById(R.id.deviceContainer);
-        settingsBtn = itemView.findViewById(R.id.settingsBtn);
-        deviceContainer.setVisibility(View.GONE);
-
-        itemView.setOnClickListener(v -> toggleInfo());
+        scanBtn = itemView.findViewById(R.id.scanBtn);
+        disconnectBtn = itemView.findViewById(R.id.disconnectBtn);
+        scannedDeviceContainer = itemView.findViewById(R.id.scannedDeviceContainer);
+        scannedDeviceList = itemView.findViewById(R.id.scannedDeviceList);
+        deviceListContainer = itemView.findViewById(R.id.deviceListContainer);
     }
 
-    // 绑定数据
-    public void bindData(Context context, List<Device> subDevices) {
-        if (subDevices == null) {
-            subDevices = new ArrayList<>();  // 空保护
-        }
-        deviceContainer.removeAllViews();
-        for (Device device : subDevices) {
-            addSubDeviceView(context, device);
-        }
-    }
+    public void init(Context context) {
+        if (initialized) return;
+        initialized = true;
+        ctx = context;
+        controller = ECGMeasurementController.getInstance();
+        controller.init(context);
+        controller.addListener(listener);
 
-    private void addSubDeviceView(Context context, Device device) {
-        View subDeviceView = LayoutInflater.from(context).inflate(R.layout.item_sub_ecg_device, deviceContainer, false);
+        expandArrow.setOnClickListener(v -> toggleExpand());
+        itemView.findViewById(R.id.headerLayout).setOnClickListener(v -> toggleExpand());
 
-        TextView macText = subDeviceView.findViewById(R.id.macAddress);
-        Button connectBtn = subDeviceView.findViewById(R.id.connectBtn);
-        Button eraseBtn = subDeviceView.findViewById(R.id.eraseBtn);
-        TextView logView = subDeviceView.findViewById(R.id.tvLog);
-        PlotView plotView = subDeviceView.findViewById(R.id.plotView);
-        PlotView plotViewX = subDeviceView.findViewById(R.id.plotViewX);
-        PlotView plotViewY = subDeviceView.findViewById(R.id.plotViewY);
-        PlotView plotViewZ = subDeviceView.findViewById(R.id.plotViewZ);
-        Button setUserBtn   = subDeviceView.findViewById(R.id.setUserBtn);   // ★
-        Button eraseUserBtn = subDeviceView.findViewById(R.id.eraseUserBtn); // ★
-        Button toggleSamplingBtn = subDeviceView.findViewById(R.id.toggleSamplingBtn);  // 新的开始/停止按钮
-        EditText etUserInfo = subDeviceView.findViewById(R.id.etUserInfo);   // ★
-
-        macText.setText(device.getName());
-        plotView.setPlotColor(Color.parseColor("#03A9F4"));
-        plotViewX.setPlotColor(Color.parseColor("#FFFF00"));
-        plotViewY.setPlotColor(Color.parseColor("#FF00FF"));
-        plotViewZ.setPlotColor(Color.parseColor("#00FFFF"));
-        final String[] currentUser = {"default"};     // ★ 当前生效的 userName，默认 "default"
-
-        macText.setText(device.getName());
-        toggleSamplingBtn.setEnabled(false);
-        eraseBtn.setEnabled(false);
-        setUserBtn.setEnabled(false);      // ★
-        eraseUserBtn.setEnabled(false);    // ★
-        setUserBtn.setOnClickListener(b -> {
-            String info = etUserInfo.getText().toString().trim();
-            if (TextUtils.isEmpty(info) || info.length() > 15) {
-                Toast.makeText(context, "内容为空或超过 15 字节", Toast.LENGTH_SHORT).show();
-                return;
+        scanBtn.setOnClickListener(v -> {
+            if (scanBtn.getText().toString().contains("停止")) {
+                stopScan();
+            } else {
+                startScan();
             }
-            CommandRequest req = new CommandRequest.Builder()
-                    .setType(CommandType.setUserInfoToFlash)
-                    .setTimeout(3_000)
-                    .addParam("info", info)
-                    .build();
-            VitalClient.getInstance().execute(device, req, new Callback() {
-                @Override
-                public void onComplete(Map<String, Object> data) {
-                    Log.d("ECG", "User onComplete: " + data);
-                }
-
-                @Override
-                public void onError(int code, String msg) {
-                    Log.e("ECG", "User onError: code=" + code + ", msg=" + msg);
-                }
-            });
-            Toast.makeText(context, "写入成功", Toast.LENGTH_SHORT).show();
         });
 
-        eraseUserBtn.setOnClickListener(b -> {
-            CommandRequest req = new CommandRequest.Builder()
-                    .setType(CommandType.eraseUserInfoFromFlash)         // ★
-                    .setTimeout(3_000)
-                    .build();
-            VitalClient.getInstance().execute(device, req, new Callback() {
-                @Override
-                public void onComplete(Map<String, Object> data) {
-                    Log.d("ECG", "cleanUser onComplete: " + data);
-                }
-
-                @Override
-                public void onError(int code, String msg) {
-                    Log.e("ECG", "cleanUser onError: code=" + code + ", msg=" + msg);
-                }
-            });
-            currentUser[0] = "default";                                  // ★ 还原
+        disconnectBtn.setOnClickListener(v -> {
+            controller.disconnect();
+            statusText.setText("未连接");
+            Toast.makeText(ctx, "已断开心电设备", Toast.LENGTH_SHORT).show();
+            deviceListContainer.removeAllViews();
+            currentDevice = null;
+            manualRecording = false;
         });
+    }
 
-        // 初始状态是 "开始采样"
-        toggleSamplingBtn.setText("开始采样");
-        final boolean[] isRecording = {false};
-        final BufferedWriter[] writer = {null};
-        // 设置按钮点击事件，进行开始和停止的切换
-        toggleSamplingBtn.setOnClickListener(v -> {
-            if (!isRecording[0]) {                         // —— 开始采样 ——
-                startSampling(device);                     // （可放到 onComplete 里再调也行）
-                eraseBtn.setEnabled(false);
-                setUserBtn.setEnabled(false);
-                eraseUserBtn.setEnabled(false);
-                /* 1. 读取用户信息 ----------------------------------------- */
-                CommandRequest readReq = new CommandRequest.Builder()
-                        .setType(CommandType.readUserInfoFromFlash) // 读取
-                        .setTimeout(3_000)
-                        .build();
+    private void toggleExpand() {
+        expanded = !expanded;
+        deviceContainer.setVisibility(expanded ? View.VISIBLE : View.GONE);
+        expandArrow.setRotation(expanded ? 180 : 0);
+    }
 
-                VitalClient.getInstance().execute(device, readReq, new Callback() {
-                    private void afterGetUser(String userInfo) {
-                        if (TextUtils.isEmpty(userInfo)) userInfo = "default";   // ★ 失败或空 → default
-                        currentUser[0] = userInfo;
-
-                        /* 2. 生成实验 ID（若 AppSettings 内无保存） */
-                        SharedPreferences sp = context.getSharedPreferences("AppSettings",
-                                Context.MODE_PRIVATE);
-                        String expId = sp.getString("experiment_id", "");
-                        if (TextUtils.isEmpty(expId)) {
-                            expId = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
-                                    .format(new Date());
-                        }
-
-                        /* 3. 创建目录 ------------------------------------------------ */
-                        File dir = new File(
-                                Environment.getExternalStoragePublicDirectory(
-                                        Environment.DIRECTORY_MOVIES),
-                                "Sample/" + expId + "/VivaLinkLog/" +
-                                        device.getName() + "/" + userInfo);
-
-                        if (!dir.exists() && !dir.mkdirs()) {
-                            Toast.makeText(context, "无法创建目录", Toast.LENGTH_SHORT).show();
-                            return;             // 目录失败，不再继续
-                        }
-
-                        /* 4. 打开日志文件 -------------------------------------------- */
-                        String fn = "VivaLink_log_" +
-                                new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US)
-                                        .format(new Date()) + ".txt";
-                        try {
-                            writer[0] = new BufferedWriter(new FileWriter(new File(dir, fn)));
-                        } catch (IOException e) {
-                            Toast.makeText(context, "文件创建失败", Toast.LENGTH_SHORT).show();
-                            return;
-                        }
-
-                        /* 5. 更新状态与 UI（主线程） -------------------------------- */
-                        ((Activity) context).runOnUiThread(() -> {
-                            isRecording[0] = true;
-                            toggleSamplingBtn.setText("停止采样");
-                            logView.setText("开始采样: " + device.getName());
-                        });
-                    }
-
-                    @Override      // 读取成功
-                    public void onComplete(Map<String, Object> data) {
-                        String ui = data == null ? null : (String) data.get("userInfo");
-                        afterGetUser(ui);
-                    }
-
-                    @Override      // 读取失败：直接用 default 继续
-                    public void onError(int code, String msg) {
-                        Log.e("ECG", "readUserInfo onError: " + code + ", " + msg);
-                        afterGetUser(null);    // 传 null → 会走 default
-                    }
+    // region 扫描 & 连接
+    private void startScan() {
+        scannedDeviceContainer.removeAllViews();
+        scannedDeviceList.setVisibility(View.VISIBLE);
+        scanBtn.setText("停止扫描");
+        controller.startScan(new BluetoothScanListener() {
+            @Override
+            public void onDeviceFound(Device device) {
+                LayoutInflater inflater = LayoutInflater.from(ctx);
+                View row = inflater.inflate(R.layout.item_scanned_ecg_device, scannedDeviceContainer, false);
+                ((TextView) row.findViewById(R.id.deviceName)).setText(device.getName());
+                ((TextView) row.findViewById(R.id.deviceMac)).setText(device.getId());
+                row.findViewById(R.id.connectBtn).setOnClickListener(v -> {
+                    stopScan();
+                    connectDevice(device);
                 });
+                scannedDeviceContainer.addView(row);
             }
-            else {               // —— 停止采样 ——
-                stopSampling(device);
-                eraseBtn.setEnabled(true);
-                setUserBtn.setEnabled(true);
-                eraseUserBtn.setEnabled(true);
-                try {
-                    if (writer[0] != null) {
-                        writer[0].close();
-                        writer[0] = null;
-                    }
-                } catch (IOException e) { e.printStackTrace(); }
 
-                isRecording[0] = false;
-                toggleSamplingBtn.setText("开始采样");
-                logView.setText("停止采样: " + device.getName());
+            @Override
+            public void onStop() {
+                scanBtn.setText("扫描心电设备");
+            }
+        });
+    }
+
+    private void stopScan() {
+        controller.stopScan();
+        scanBtn.setText("扫描心电设备");
+    }
+
+    private void connectDevice(Device device) {
+        statusText.setText("连接中...");
+        controller.connect(device, new BluetoothConnectListener() {
+            @Override
+            public void onConnected(Device d) {
+                currentDevice = d;
+                renderConnectedDevice(d);
+            }
+
+            @Override
+            public void onDeviceReady(Device d) {
+                statusText.setText("已连接");
+            }
+        });
+    }
+    // endregion
+
+    // region 渲染连接后的视图
+    private void renderConnectedDevice(Device device) {
+        deviceListContainer.removeAllViews();
+        LayoutInflater inflater = LayoutInflater.from(ctx);
+        View card = inflater.inflate(R.layout.item_sub_ecg_device, deviceListContainer, false);
+        deviceListContainer.addView(card);
+
+        tvMac = card.findViewById(R.id.macAddress);
+        tvBattery = card.findViewById(R.id.batteryText);
+        leadIndicator = card.findViewById(R.id.leadStatusIndicator);
+        tvLeadStatus = card.findViewById(R.id.leadStatusText);
+        tvHeartRate = card.findViewById(R.id.heartRateText);
+        tvRespRate = card.findViewById(R.id.respiratoryRateText);
+        tvMeasurementStatus = card.findViewById(R.id.measurementStatusText);
+        toggleSamplingBtn = card.findViewById(R.id.toggleSamplingBtn);
+        ecgPlot = card.findViewById(R.id.plotView);
+        tvLog = card.findViewById(R.id.tvLog);
+
+        tvMac.setText(device.getId());
+        tvBattery.setText("--%");
+        tvLeadStatus.setText("导联未知");
+        tvHeartRate.setText("-- bpm");
+        tvRespRate.setText("-- rpm");
+        tvMeasurementStatus.setText("等待连接...");
+        toggleSamplingBtn.setText(controller.isMeasuring() ? "停止录制" : "开始录制");
+        manualRecording = controller.isMeasuring();
+
+        // 手动录制按钮
+        toggleSamplingBtn.setOnClickListener(v -> {
+            if (manualRecording) {
+                controller.stopSynchronizedMeasurement();
+                manualRecording = false;
+                toggleSamplingBtn.setText("开始录制");
+                tvMeasurementStatus.setText("已停止");
+            } else {
+                startManualMeasurement();
             }
         });
 
-        eraseBtn.setOnClickListener(v->{
-            CommandRequest request = new CommandRequest.Builder()
-                    .setType(CommandType.eraseFlash)
-                    .setTimeout(3*1000)
-                    .build();
-            VitalClient.getInstance().execute(device, request, new Callback() {
-                @Override
-                public void onComplete(Map<String, Object> data) {
-                    // 开始采样命令一般返回 null，如果有返回数据也可打印出来
-                    Log.d("ECG", "erase onComplete: " + data);
-                }
-
-                @Override
-                public void onError(int code, String msg) {
-                    Log.e("ECG", "erase onError: code=" + code + ", msg=" + msg);
-                }
-            });
-        });
+        // 连接按钮改为断开
+        MaterialButton connectBtn = card.findViewById(R.id.connectBtn);
+        connectBtn.setText("断开");
         connectBtn.setOnClickListener(v -> {
-            toggleSamplingBtn.setEnabled(false);
-            eraseBtn.setEnabled(false);
-            setUserBtn.setEnabled(false);      // ★
-            eraseUserBtn.setEnabled(false);    // ★
-            BleConnectOptions options = new BleConnectOptions.Builder().setAutoConnect(false).build();
-            VitalClient.getInstance().connect(device, options, new BluetoothConnectListener() {
-                @Override
-                public void onConnected(Device device) {
-                    VitalClient.getInstance().registerDataReceiver(device, new DataReceiveListener() {
-
-                        @Override
-                        public void onReceiveData(Device device, Map<String, Object> data) {
-                            String logStr = "接收到数据: " + GSON.toJson(data);
-                            if (isRecording[0] && writer[0] != null) {
-                                try {
-
-                                    writer[0].write(data + "\n");
-                                    writer[0].flush();
-                                } catch (IOException e) { e.printStackTrace(); }
-                            }
-                            Log.e("TAG", logStr);
-                        }
-
-                        @Override
-                        public void onBatteryChange(Device device, Map<String, Object> data) {
-                            String logStr = "电池变化: " + GSON.toJson(data);
-                            Log.e("TAG", logStr);
-                        }
-
-                        @Override
-                        public void onDeviceInfoUpdate(Device device, Map<String, Object> data) {
-                            String logStr = "设备信息更新: " + GSON.toJson(data);
-                            Log.e("TAG", logStr);
-                        }
-
-                        @Override
-                        public void onLeadStatusChange(Device device, boolean isLeadOn) {
-                            String logStr = "导联状态变化: " + isLeadOn;
-                            Log.e("TAG", logStr);
-                        }
-
-                        @Override
-                        public void onFlashStatusChange(Device device, int remainderFlashBlock) {
-                            String logStr = "闪光灯状态变化: 剩余块数 = " + remainderFlashBlock;
-                            Log.e("TAG", logStr);
-                        }
-
-                        @Override
-                        public void onFlashUploadFinish(Device device) {
-                            String logStr = "上传完成: " + GSON.toJson(device);
-                            Log.e("TAG", logStr);
-                        }
-                    });
-                    VitalClient.getInstance().registerSampleDataReceiver(device, new SampleDataReceiveListener() {
-                        @Override
-                        public void onReceiveSampleData(Device device, boolean flash, SampleData data) {
-                            SampleDataReceiveListener.super.onReceiveSampleData(device, flash, data);
-                            Integer HR = (Integer) data.extras.get("hr");
-                            Integer RR = (Integer) data.extras.get("rr");
-
-
-                            int[] ecg = (int[]) data.extras.get("ecg");
-                            Motion[] acc = (Motion[]) data.extras.get("acc");
-
-                            ((Activity) context).runOnUiThread(new Runnable() {
-                                @Override
-                                public void run() {
-                                    // 在这里更新 UI
-                                    logView.setText("HR:" + HR + "RR:" + RR);
-
-                                    for (int value : ecg) {
-                                        plotView.addValue(value);
-                                    }
-                                    for(Motion motion :acc){
-                                        plotViewX.addValue(motion.getX());
-                                        plotViewY.addValue(motion.getY());
-                                        plotViewZ.addValue(motion.getZ());
-
-                                    }
-                                }
-                            });
-                            List<Integer> newECGData = new ArrayList<>();
-                            List<Integer> newAccXData = new ArrayList<>();
-                            List<Integer> newAccYData = new ArrayList<>();
-                            List<Integer> newAccZData = new ArrayList<>();
-                            if (ecg != null) {
-                                for (int value : ecg) {
-                                    newECGData.add(value);
-                                }
-                            }
-                            if (acc != null) {
-                                for (Motion motion : acc) {
-                                    newAccXData.add(motion.getX());
-                                    newAccYData.add(motion.getY());
-                                    newAccZData.add(motion.getZ());
-                                }
-                            }
-                        }
-                    });
-
-                }
-
-                @Override
-                public void onDeviceReady(Device device) {
-                    String logStr = "设备已准备好: " + GSON.toJson(device);
-                    ((Activity) context).runOnUiThread(() -> {
-                        toggleSamplingBtn.setEnabled(true);
-                        eraseBtn.setEnabled(true);
-                        setUserBtn.setEnabled(true);      // ★
-                        eraseUserBtn.setEnabled(true);    // ★
-                        Toast.makeText(context,
-                                device.getName() + " 已就绪，可开始采样或擦除 Flash",
-                                Toast.LENGTH_SHORT).show();
-
-                        // 若你想在 logView 上也提示
-                        logView.setText("设备已就绪: " + device.getName());
-                    });
-                    Log.e("TAG", logStr);
-                }
-
-                @Override
-                public void onDisconnected(Device device, boolean isForce) {
-
-                }
-
-                @Override
-                public void onError(Device device, int code, String msg) {
-                    String logStr = "设备连接出错: " + code + ", 错误信息: " + msg;
-                    Log.e("TAG", logStr);
-                }
-            });            logView.setText("连接到设备: " + device.getName());
-            Toast.makeText(context, "连接成功: " + device.getName(), Toast.LENGTH_SHORT).show();
+            controller.disconnect();
+            deviceListContainer.removeAllViews();
+            statusText.setText("未连接");
+            currentDevice = null;
+            manualRecording = false;
         });
-        deviceContainer.addView(subDeviceView);
-
     }
 
+    private void startManualMeasurement() {
+        SharedPreferences prefs = ctx.getSharedPreferences("AppSettings", Context.MODE_PRIVATE);
+        String experiment = prefs.getString("experiment_id", "default");
+        int duration = prefs.getInt("recording_duration", 30);
 
-    // 切换展开/收起 info
-    public void toggleInfo() {
-        if (infoVisible) {
-            deviceContainer.animate()
-                    .translationY(100)
-                    .alpha(0f)
-                    .setDuration(200)
-                    .withEndAction(() -> deviceContainer.setVisibility(View.GONE))
-                    .start();
-        } else {
-            deviceContainer.setAlpha(0f);
-            deviceContainer.setTranslationY(100);
-            deviceContainer.setVisibility(View.VISIBLE);
-            deviceContainer.animate()
-                    .translationY(0)
-                    .alpha(1f)
-                    .setDuration(200)
-                    .start();
+        SessionManager.getInstance().startSession(ctx, experiment);
+        TimeSync.startSessionClock();
+        controller.beginSynchronizedMeasurement(duration, SessionManager.getInstance().getSessionDir());
+
+        manualRecording = true;
+        toggleSamplingBtn.setText("停止录制");
+        tvMeasurementStatus.setText(String.format(Locale.CHINA, "录制中（%d秒）", duration));
+        Toast.makeText(ctx, "心电录制开始", Toast.LENGTH_SHORT).show();
+    }
+    // endregion
+
+    // region 监听器
+    private final ECGMeasurementController.Listener listener = new ECGMeasurementController.Listener() {
+        @Override
+        public void onConnectionStateChanged(ECGMeasurementController.ConnectionState state, Device device) {
+            switch (state) {
+                case CONNECTING:
+                    statusText.setText("连接中...");
+                    break;
+                case CONNECTED:
+                case READY:
+                    statusText.setText("已连接");
+                    break;
+                case DISCONNECTED:
+                    statusText.setText("未连接");
+                    manualRecording = false;
+                    if (toggleSamplingBtn != null) toggleSamplingBtn.setText("开始录制");
+                    break;
+            }
         }
-        infoVisible = !infoVisible;
-    }
-    public static void startSampling(Device device) {
-        VV330Manager vv330Manager = new VV330Manager(device);
-        vv330Manager.switchToFullDualMode(device, new Callback() {
-            @Override
-            public void onStart() {
-                Callback.super.onStart();
-            }
-        });
 
-        CommandRequest request = new CommandRequest.Builder()
-                .setType(CommandType.startSampling)
-                .setTimeout(3000)  // 超时时间 3 秒
-                .build();
-
-        VitalClient.getInstance().execute(device, request, new Callback() {
-            @Override
-            public void onComplete(Map<String, Object> data) {
-                // 开始采样命令一般返回 null，如果有返回数据也可打印出来
-                Log.d("ECG", "startSampling onComplete: " + data);
+        @Override
+        public void onRealtimeData(ECGMeasurementController.ECGRealtimeData data) {
+            if (data == null) return;
+            manualRecording = controller.isMeasuring();
+            if (toggleSamplingBtn != null) {
+                toggleSamplingBtn.setText(manualRecording ? "停止录制" : "开始录制");
             }
-
-            @Override
-            public void onError(int code, String msg) {
-                Log.e("ECG", "startSampling onError: code=" + code + ", msg=" + msg);
+            if (tvMeasurementStatus != null) {
+                tvMeasurementStatus.setText(manualRecording ? "录制中" : "待机");
             }
-        });
-    }
-    public static void stopSampling(Device device) {
-        CommandRequest request = new CommandRequest.Builder()
-                .setType(CommandType.stopSampling)
-                .setTimeout(3000)  // 超时时间 3 秒
-                .build();
-
-        VitalClient.getInstance().execute(device, request, new Callback() {
-            @Override
-            public void onComplete(Map<String, Object> data) {
-                Log.d("ECG", "stopSampling onComplete: " + data);
+            if (tvHeartRate != null && data.hr != null && data.hr > 0) {
+                tvHeartRate.setText(data.hr + " bpm");
             }
-
-            @Override
-            public void onError(int code, String msg) {
-                Log.e("ECG", "stopSampling onError: code=" + code + ", msg=" + msg);
+            if (tvRespRate != null && data.rr != null && data.rr > 0) {
+                tvRespRate.setText(data.rr + " rpm");
             }
-        });
+            if (tvBattery != null && data.batteryPercent != null && data.batteryPercent >= 0) {
+                tvBattery.setText(data.batteryPercent + "%");
+            }
+            if (tvLeadStatus != null) {
+                tvLeadStatus.setText(data.leadOn ? "导联良好" : "导联脱落");
+                tintLeadIndicator(data.leadOn);
+            }
+            if (ecgPlot != null && data.ecgMv != null) {
+                for (float v : data.ecgMv) {
+                    ecgPlot.addValue((int) (v * 1000)); // 转为近似微伏整数用于绘图
+                }
+            }
+        }
+
+        @Override
+        public void onLog(String msg) {
+            if (tvLog != null) tvLog.setText(msg);
+        }
+    };
+    // endregion
+
+    private void tintLeadIndicator(boolean leadOn) {
+        if (leadIndicator == null) return;
+        Drawable bg = leadIndicator.getBackground();
+        int color = leadOn ? 0xFF4CAF50 : 0xFFF44336;
+        if (bg != null) {
+            bg.setColorFilter(color, PorterDuff.Mode.SRC_IN);
+        } else {
+            leadIndicator.setBackgroundColor(color);
+        }
     }
 }

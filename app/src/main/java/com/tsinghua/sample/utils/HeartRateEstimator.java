@@ -35,6 +35,26 @@ import ai.onnxruntime.OrtSession;
 
 public class HeartRateEstimator {
 
+    /**
+     * 心率更新回调接口
+     */
+    public interface OnHeartRateListener {
+        void onHeartRateUpdated(float heartRate);
+    }
+
+    private OnHeartRateListener heartRateListener;
+
+    public void setOnHeartRateListener(OnHeartRateListener listener) {
+        this.heartRateListener = listener;
+    }
+
+    /**
+     * 设置PlotView（用于预加载后更新）
+     */
+    public void setPlotView(PlotView plotView) {
+        this.plotView = plotView;
+    }
+
     private final OrtEnvironment env;
     private final OrtSession signalSession;
     private final OrtSession welchSession;
@@ -194,12 +214,20 @@ public class HeartRateEstimator {
 
             signalOutput.add(output);
             if (signalOutput.size() > 300) signalOutput.remove(0);
-            plotView.addValue(output);
+            if (plotView != null) {
+                plotView.addValue(output);
+            }
 
             welchCount++;
             if (signalOutput.size() == 300 && welchCount >= 300) {
                 welchCount = 270;                 // 重置计数
                 hrResult   = estimateHRFromSignal(signalOutput);
+
+                // 通知监听器心率更新
+                if (hrResult != null && heartRateListener != null) {
+                    final float hr = hrResult;
+                    mainHandler.post(() -> heartRateListener.onHeartRateUpdated(hr));
+                }
             }
 
         } finally {

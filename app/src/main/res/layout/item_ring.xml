@@ -1,120 +1,203 @@
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:padding="12dp"
-    android:orientation="vertical"
-    android:background="@android:color/white"
-    android:elevation="2dp">
+    android:layout_marginHorizontal="4dp"
+    android:layout_marginVertical="6dp"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="2dp"
+    app:strokeWidth="0dp"
+    app:cardBackgroundColor="@android:color/white">
 
-    <!-- 顶部信息区域 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:paddingBottom="10dp">
+        android:orientation="vertical"
+        android:padding="16dp">
 
-        <TextView
-            android:id="@+id/deviceName"
-            android:layout_width="0dp"
-            android:layout_weight="1"
+        <!-- 设备头部信息 - iOS风格可折叠区块 -->
+        <LinearLayout
+            android:id="@+id/headerLayout"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="指环"
-            android:textSize="18sp"
-            android:textColor="#000"/>
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingVertical="4dp">
 
-        <Button
-            android:id="@+id/startBtn"
+            <!-- 设备名称 -->
+            <TextView
+                android:id="@+id/deviceName"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="指环数据"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/black"
+                android:maxLines="1"
+                android:ellipsize="end" />
+
+            <!-- 连接状态文本 -->
+            <TextView
+                android:id="@+id/statusText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="未连接"
+                android:textSize="12sp"
+                android:textColor="#FF9800"
+                android:layout_marginEnd="8dp" />
+
+            <!-- 展开/折叠箭头 -->
+            <ImageView
+                android:id="@+id/expandArrow"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@android:drawable/arrow_down_float"
+                android:contentDescription="展开"
+                android:rotation="0" />
+
+        </LinearLayout>
+
+        <!-- 隐藏的按钮引用（保持ViewHolder兼容性） -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/connectBtn"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="开始录制"
-            android:textSize="12sp"
-            android:background="#4CAF50"
-            android:textColor="@android:color/white" />
+            android:layout_height="0dp"
+            android:visibility="gone"
+            android:text="连接" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/startBtn"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="0dp"
+            android:visibility="gone"
+            android:text="开始录制" />
 
         <ImageButton
             android:id="@+id/settingsBtn"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:src="@android:drawable/ic_menu_manage"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:visibility="gone"
             android:contentDescription="设置" />
-    </LinearLayout>
 
-    <!-- 修复版：使用NestedScrollView包装所有可滚动内容 -->
-    <androidx.core.widget.NestedScrollView
-        android:id="@+id/infoLayout"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:visibility="gone"
-        android:fillViewport="false"
-        android:scrollbars="vertical"
-        android:background="#EFEFEF">
+        <ImageView
+            android:id="@+id/deviceIcon"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:visibility="gone" />
 
-        <LinearLayout
+        <!-- 展开信息区域 -->
+        <androidx.core.widget.NestedScrollView
+            android:id="@+id/infoLayout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="8dp">
+            android:layout_marginTop="12dp"
+            android:visibility="gone"
+            android:fillViewport="false"
+            android:scrollbars="vertical">
 
-            <!-- 第一行：蓝牙连接和时间操作 -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="8dp">
-
-                <Button
-                    android:id="@+id/connectBtn"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:layout_height="wrap_content"
-                    android:text="连接蓝牙"
-                    android:layout_marginEnd="4dp"
-                    android:background="@android:color/holo_blue_dark"
-                    android:textColor="@android:color/white" />
-
-                <Button
-                    android:id="@+id/timeUpdateBtn"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:layout_height="wrap_content"
-                    android:text="更新时间"
-                    android:layout_marginStart="4dp"
-                    android:layout_marginEnd="4dp"
-                    android:background="@android:color/holo_purple"
-                    android:textColor="@android:color/white" />
-
-                <Button
-                    android:id="@+id/timeSyncBtn"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:layout_height="wrap_content"
-                    android:text="时间校准"
-                    android:layout_marginStart="4dp"
-                    android:background="@android:color/holo_orange_light"
-                    android:textColor="@android:color/white" />
-
-            </LinearLayout>
-            <!-- 状态日志显示区域 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
-                android:layout_marginBottom="12dp">
+                android:padding="12dp"
+                android:background="@drawable/rounded_bg_light">
 
+                <!-- 连接控制按钮 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginBottom="12dp">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/connectBtn2"
+                        style="@style/Widget.MaterialComponents.Button"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="44dp"
+                        android:layout_marginEnd="4dp"
+                        android:text="连接"
+                        android:textSize="13sp"
+                        app:backgroundTint="#2196F3"
+                        app:cornerRadius="8dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/scanBtn"
+                        style="@style/Widget.MaterialComponents.Button"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="44dp"
+                        android:layout_marginEnd="4dp"
+                        android:text="扫描"
+                        android:textSize="13sp"
+                        app:backgroundTint="#2196F3"
+                        app:cornerRadius="8dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/disconnectBtn"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="44dp"
+                        android:text="断开"
+                        android:textSize="13sp"
+                        app:cornerRadius="8dp"
+                        app:strokeColor="#F44336" />
+
+                </LinearLayout>
+
+                <!-- 时间操作按钮行 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginBottom="12dp">
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/timeUpdateBtn"
+                        style="@style/Widget.MaterialComponents.Button"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="40dp"
+                        android:layout_marginEnd="4dp"
+                        android:text="更新时间"
+                        android:textSize="12sp"
+                        app:backgroundTint="#2196F3"
+                        app:cornerRadius="8dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/timeSyncBtn"
+                        style="@style/Widget.MaterialComponents.Button"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="40dp"
+                        android:text="时间校准"
+                        android:textSize="12sp"
+                        app:backgroundTint="#2196F3"
+                        app:cornerRadius="8dp" />
+
+                </LinearLayout>
+
+                <!-- 状态日志显示区域 -->
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="状态日志 (仅在录制时保存到文件):"
+                    android:text="状态日志"
                     android:textSize="12sp"
                     android:textStyle="bold"
-                    android:textColor="#333"
+                    android:textColor="#666666"
                     android:layout_marginBottom="4dp"/>
 
                 <ScrollView
                     android:layout_width="match_parent"
                     android:layout_height="80dp"
-                    android:background="#F5F5F5"
-                    android:padding="4dp">
+                    android:background="#FFFFFF"
+                    android:padding="8dp">
 
                     <TextView
                         android:id="@+id/tvLog"
@@ -122,522 +205,372 @@
                         android:layout_height="wrap_content"
                         android:text="点击'开始录制'开始记录会话日志..."
                         android:textSize="11sp"
-                        android:textColor="#000"
-                        android:padding="4dp" />
+                        android:textColor="#333333"
+                        android:fontFamily="monospace" />
 
                 </ScrollView>
 
-            </LinearLayout>
-
-            <!-- 主动测量控制区域 - 新增停止采集按钮 -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:layout_marginBottom="8dp"
-                android:background="#F0FFF0"
-                android:padding="8dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="🎯 主动测量控制"
-                    android:textSize="12sp"
-                    android:textStyle="bold"
-                    android:textColor="#2E7D32"
-                    android:layout_marginBottom="6dp"/>
-
-                <!-- 测量时间输入行 -->
+                <!-- 主动测量控制区域 -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:layout_marginBottom="6dp">
+                    android:orientation="vertical"
+                    android:layout_marginTop="12dp"
+                    android:padding="12dp"
+                    android:background="#FFFFFF">
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="测量时间："
+                        android:text="主动测量"
                         android:textSize="12sp"
-                        android:textColor="#333"
-                        android:layout_gravity="center_vertical"
-                        android:layout_marginEnd="4dp" />
+                        android:textStyle="bold"
+                        android:textColor="#4CAF50"
+                        android:layout_marginBottom="8dp"/>
 
-                    <EditText
-                        android:id="@+id/editText_measurement_time"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:layout_height="36dp"
-                        android:hint="秒数 (1-3600)"
-                        android:text="30"
-                        android:textSize="12sp"
-                        android:background="@android:color/white"
-                        android:padding="6dp"
-                        android:layout_marginEnd="4dp"
-                        android:inputType="number"
-                        android:maxLines="1" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="8dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="测量时间(秒)"
+                            android:textSize="12sp"
+                            android:textColor="#666666"
+                            android:layout_marginEnd="8dp" />
+
+                        <EditText
+                            android:id="@+id/editText_measurement_time"
+                            android:layout_width="80dp"
+                            android:layout_height="40dp"
+                            android:text="30"
+                            android:textSize="14sp"
+                            android:gravity="center"
+                            android:background="@drawable/rounded_bg_light"
+                            android:inputType="number"
+                            android:maxLines="1" />
+
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_start_measurement"
+                            style="@style/Widget.MaterialComponents.Button"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="40dp"
+                            android:text="开始测量"
+                            android:textSize="12sp"
+                            android:layout_marginEnd="8dp"
+                            app:backgroundTint="#4CAF50"
+                            app:cornerRadius="8dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_stop_collection"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="40dp"
+                            android:text="停止采集"
+                            android:textSize="12sp"
+                            android:enabled="false"
+                            app:cornerRadius="8dp" />
+
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/text_measurement_status"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="测量状态: 就绪"
+                        android:textSize="11sp"
+                        android:textColor="#666666"
+                        android:layout_marginTop="8dp"/>
 
                 </LinearLayout>
 
-                <!-- 测量控制按钮行 - 新增停止采集按钮 -->
+                <!-- 运动控制区域 -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-
-                    <Button
-                        android:id="@+id/btn_start_measurement"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:layout_height="36dp"
-                        android:text="开始测量"
-                        android:textSize="12sp"
-                        android:background="#4CAF50"
-                        android:textColor="@android:color/white"
-                        android:layout_marginEnd="4dp" />
-
-                    <Button
-                        android:id="@+id/btn_stop_collection"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:layout_height="36dp"
-                        android:text="停止采集"
-                        android:textSize="12sp"
-                        android:background="#F44336"
-                        android:textColor="@android:color/white"
-                        android:layout_marginStart="4dp"
-                        android:enabled="false" />
-
-                </LinearLayout>
-
-                <!-- 测量状态显示 -->
-                <TextView
-                    android:id="@+id/text_measurement_status"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="测量状态: 就绪"
-                    android:textSize="11sp"
-                    android:textColor="#333"
-                    android:background="#FFFFFF"
-                    android:padding="6dp"
-                    android:layout_marginTop="6dp"
-                    android:textStyle="italic"/>
-
-            </LinearLayout>
-
-            <!-- 运动控制区域 -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:layout_marginBottom="8dp"
-                android:background="#FFF3E0"
-                android:padding="8dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="运动控制"
-                    android:textSize="12sp"
-                    android:textStyle="bold"
-                    android:textColor="#E65100"
-                    android:layout_marginBottom="6dp"/>
-
-                <!-- 运动参数输入行 -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:layout_marginBottom="6dp">
+                    android:orientation="vertical"
+                    android:layout_marginTop="12dp"
+                    android:padding="12dp"
+                    android:background="#FFFFFF">
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="总时长："
-                        android:textSize="11sp"
-                        android:textColor="#333"
-                        android:layout_gravity="center_vertical"
-                        android:layout_marginEnd="4dp" />
+                        android:text="运动控制"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:textColor="#FF9800"
+                        android:layout_marginBottom="8dp"/>
 
-                    <EditText
-                        android:id="@+id/editText_exercise_duration"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:layout_height="34dp"
-                        android:hint="秒"
-                        android:text="14400"
-                        android:textSize="11sp"
-                        android:background="@android:color/white"
-                        android:padding="4dp"
-                        android:layout_marginEnd="4dp"
-                        android:inputType="number"
-                        android:maxLines="1" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="8dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="总时长"
+                            android:textSize="11sp"
+                            android:textColor="#666666"
+                            android:layout_marginEnd="4dp" />
+
+                        <EditText
+                            android:id="@+id/editText_exercise_duration"
+                            android:layout_width="60dp"
+                            android:layout_height="36dp"
+                            android:text="14400"
+                            android:textSize="12sp"
+                            android:gravity="center"
+                            android:background="@drawable/rounded_bg_light"
+                            android:inputType="number"
+                            android:layout_marginEnd="12dp" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="片段"
+                            android:textSize="11sp"
+                            android:textColor="#666666"
+                            android:layout_marginEnd="4dp" />
+
+                        <EditText
+                            android:id="@+id/editText_segment_duration"
+                            android:layout_width="60dp"
+                            android:layout_height="36dp"
+                            android:text="600"
+                            android:textSize="12sp"
+                            android:gravity="center"
+                            android:background="@drawable/rounded_bg_light"
+                            android:inputType="number" />
+
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_start_exercise"
+                            style="@style/Widget.MaterialComponents.Button"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="40dp"
+                            android:text="开始运动"
+                            android:textSize="12sp"
+                            android:layout_marginEnd="8dp"
+                            app:backgroundTint="#FF9800"
+                            app:cornerRadius="8dp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btn_stop_exercise"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="40dp"
+                            android:text="结束运动"
+                            android:textSize="12sp"
+                            app:cornerRadius="8dp" />
+
+                    </LinearLayout>
 
                     <TextView
-                        android:layout_width="wrap_content"
+                        android:id="@+id/text_exercise_status"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="片段："
+                        android:text="运动状态: 就绪"
                         android:textSize="11sp"
-                        android:textColor="#333"
-                        android:layout_gravity="center_vertical"
-                        android:layout_marginEnd="4dp" />
-
-                    <EditText
-                        android:id="@+id/editText_segment_duration"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:layout_height="34dp"
-                        android:hint="秒"
-                        android:text="600"
-                        android:textSize="11sp"
-                        android:background="@android:color/white"
-                        android:padding="4dp"
-                        android:inputType="number"
-                        android:maxLines="1" />
+                        android:textColor="#666666"
+                        android:layout_marginTop="8dp"/>
 
                 </LinearLayout>
 
-                <!-- 运动控制按钮行 -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:layout_marginBottom="6dp">
-
-                    <Button
-                        android:id="@+id/btn_start_exercise"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:layout_height="36dp"
-                        android:text="开始运动"
-                        android:textSize="12sp"
-                        android:background="#FF9800"
-                        android:textColor="@android:color/white"
-                        android:layout_marginEnd="4dp" />
-
-                    <Button
-                        android:id="@+id/btn_stop_exercise"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:layout_height="36dp"
-                        android:text="结束运动"
-                        android:textSize="12sp"
-                        android:background="#F44336"
-                        android:textColor="@android:color/white"
-                        android:layout_marginStart="4dp"
-                        />
-
-                </LinearLayout>
-
-                <!-- 运动状态显示 -->
-                <TextView
-                    android:id="@+id/text_exercise_status"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="运动状态: 就绪"
-                    android:textSize="11sp"
-                    android:textColor="#333"
-                    android:background="#FFFFFF"
-                    android:padding="6dp"
-                    android:textStyle="italic"/>
-
-            </LinearLayout>
-
-            <!-- 实时数据图表区域 -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="实时传感器数据:"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:textColor="#333"
-                android:layout_marginBottom="8dp"/>
-
-            <!-- PPG数据区域 -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:background="#F8FFF8"
-                android:padding="6dp"
-                android:layout_marginBottom="8dp">
-
+                <!-- PPG数据图表区域 -->
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="💚 PPG光电容积脉搏波数据"
+                    android:text="PPG实时数据"
                     android:textSize="12sp"
                     android:textStyle="bold"
-                    android:textColor="#2E7D32"
-                    android:layout_marginBottom="6dp"/>
+                    android:textColor="#4CAF50"
+                    android:layout_marginTop="16dp"
+                    android:layout_marginBottom="8dp"/>
 
-                <!-- Green PlotView -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="🟢 Green Data (PPG绿光)"
-                    android:textSize="11sp"
-                    android:textColor="#00AA00"
-                    android:textStyle="bold"
-                    android:paddingTop="2dp"/>
                 <com.tsinghua.sample.PlotView
                     android:id="@+id/plotViewG"
                     android:layout_width="match_parent"
-                    android:layout_height="70dp"
+                    android:layout_height="60dp"
                     android:background="#FFFFFF"
-                    android:layout_marginBottom="6dp" />
+                    android:layout_marginBottom="4dp" />
 
-                <!-- IR PlotView -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="🔴 IR Data (PPG红外)"
-                    android:textSize="11sp"
-                    android:textColor="#0000AA"
-                    android:textStyle="bold"
-                    android:paddingTop="2dp"/>
                 <com.tsinghua.sample.PlotView
                     android:id="@+id/plotViewI"
                     android:layout_width="match_parent"
-                    android:layout_height="70dp"
+                    android:layout_height="60dp"
                     android:background="#FFFFFF"
-                    android:layout_marginBottom="6dp" />
+                    android:layout_marginBottom="4dp" />
 
-                <!-- Red PlotView -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="🔴 Red Data (PPG红光)"
-                    android:textSize="11sp"
-                    android:textColor="#AA0000"
-                    android:textStyle="bold"
-                    android:paddingTop="2dp"/>
                 <com.tsinghua.sample.PlotView
                     android:id="@+id/plotViewR"
                     android:layout_width="match_parent"
-                    android:layout_height="70dp"
+                    android:layout_height="60dp"
                     android:background="#FFFFFF"
-                    android:layout_marginBottom="6dp" />
+                    android:layout_marginBottom="8dp" />
 
-            </LinearLayout>
-
-            <!-- 加速度数据区域 -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:background="#FFF8F0"
-                android:padding="6dp"
-                android:layout_marginBottom="12dp">
-
+                <!-- 加速度数据图表区域 -->
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="📱 三轴加速度传感器数据"
+                    android:text="加速度数据"
                     android:textSize="12sp"
                     android:textStyle="bold"
-                    android:textColor="#E65100"
-                    android:layout_marginBottom="6dp"/>
+                    android:textColor="#FF9800"
+                    android:layout_marginTop="8dp"
+                    android:layout_marginBottom="8dp"/>
 
-                <!-- X PlotView -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="📏 X Axis (X轴加速度)"
-                    android:textSize="11sp"
-                    android:textColor="#AAAA00"
-                    android:textStyle="bold"
-                    android:paddingTop="2dp"/>
                 <com.tsinghua.sample.PlotView
                     android:id="@+id/plotViewX"
                     android:layout_width="match_parent"
-                    android:layout_height="70dp"
+                    android:layout_height="50dp"
                     android:background="#FFFFFF"
-                    android:layout_marginBottom="6dp" />
+                    android:layout_marginBottom="4dp" />
 
-                <!-- Y PlotView -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="📏 Y Axis (Y轴加速度)"
-                    android:textSize="11sp"
-                    android:textColor="#AA00AA"
-                    android:textStyle="bold"
-                    android:paddingTop="2dp"/>
                 <com.tsinghua.sample.PlotView
                     android:id="@+id/plotViewY"
                     android:layout_width="match_parent"
-                    android:layout_height="70dp"
+                    android:layout_height="50dp"
                     android:background="#FFFFFF"
-                    android:layout_marginBottom="6dp" />
+                    android:layout_marginBottom="4dp" />
 
-                <!-- Z PlotView -->
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="📏 Z Axis (Z轴加速度)"
-                    android:textSize="11sp"
-                    android:textColor="#00AAAA"
-                    android:textStyle="bold"
-                    android:paddingTop="2dp"/>
                 <com.tsinghua.sample.PlotView
                     android:id="@+id/plotViewZ"
                     android:layout_width="match_parent"
-                    android:layout_height="70dp"
+                    android:layout_height="50dp"
                     android:background="#FFFFFF"
-                    android:layout_marginBottom="6dp" />
+                    android:layout_marginBottom="8dp" />
 
-            </LinearLayout>
-            <!-- 文件操作区域 - 修复版 -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:layout_marginBottom="8dp"
-                android:background="#F0F8FF"
-                android:padding="8dp">
-
+                <!-- 文件管理区域 -->
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="📁 文件管理"
+                    android:text="文件管理"
                     android:textSize="12sp"
                     android:textStyle="bold"
-                    android:textColor="#1565C0"
-                    android:layout_marginBottom="6dp"/>
+                    android:textColor="#2196F3"
+                    android:layout_marginTop="8dp"
+                    android:layout_marginBottom="8dp"/>
 
-                <!-- 文件操作按钮行 -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:layout_marginBottom="8dp">
 
-                    <Button
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/requestFileListBtn"
+                        style="@style/Widget.MaterialComponents.Button"
                         android:layout_width="0dp"
                         android:layout_weight="1"
-                        android:layout_height="wrap_content"
-                        android:text="获取文件列表"
+                        android:layout_height="40dp"
                         android:layout_marginEnd="4dp"
-                        android:background="@android:color/holo_blue_light"
-                        android:textColor="@android:color/white"
-                        android:textSize="11sp" />
-
-                    <Button
-                        android:id="@+id/downloadSelectedBtn"
-                        android:layout_width="0dp"
-                        android:layout_weight="1"
-                        android:layout_height="wrap_content"
-                        android:text="下载选中 (0)"
-                        android:layout_marginStart="4dp"
-                        android:background="@android:color/holo_green_light"
-                        android:textColor="@android:color/white"
+                        android:text="获取列表"
                         android:textSize="11sp"
-                        />
-                    <Button
-                        android:id="@+id/formatFileSystemBtn"
+                        app:backgroundTint="#2196F3"
+                        app:cornerRadius="8dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/downloadSelectedBtn"
+                        style="@style/Widget.MaterialComponents.Button"
                         android:layout_width="0dp"
                         android:layout_weight="1"
-                        android:layout_height="wrap_content"
-                        android:text="格式化系统"
-                        android:layout_marginStart="2dp"
-                        android:background="#FF5722"
-                        android:textColor="@android:color/white"
-                        android:textSize="10sp"
-                        android:textStyle="bold" />
+                        android:layout_height="40dp"
+                        android:layout_marginEnd="4dp"
+                        android:text="下载选中"
+                        android:textSize="11sp"
+                        app:backgroundTint="#2196F3"
+                        app:cornerRadius="8dp" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/formatFileSystemBtn"
+                        style="@style/Widget.MaterialComponents.Button"
+                        android:layout_width="0dp"
+                        android:layout_weight="1"
+                        android:layout_height="40dp"
+                        android:text="格式化"
+                        android:textSize="11sp"
+                        app:backgroundTint="#F44336"
+                        app:cornerRadius="8dp" />
+
                 </LinearLayout>
 
-                <!-- 文件列表状态 -->
                 <TextView
                     android:id="@+id/fileListStatusText"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="文件列表 (未获取)"
                     android:textSize="11sp"
-                    android:textColor="#666"
-                    android:textStyle="italic"
-                    android:layout_marginBottom="6dp" />
+                    android:textColor="#666666"
+                    android:layout_marginBottom="8dp" />
 
-                <!-- 关键修复：文件列表容器 - 去掉NestedScrollView嵌套 -->
-                <LinearLayout
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/fileListRecyclerView"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
+                    android:layout_height="150dp"
                     android:background="#FFFFFF"
-                    android:padding="4dp">
+                    android:nestedScrollingEnabled="false"
+                    android:padding="4dp" />
 
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:text="可选择文件列表："
-                        android:textSize="10sp"
-                        android:textColor="#333"
-                        android:paddingBottom="4dp" />
-
-                    <!-- 修复版：直接使用RecyclerView，设置固定高度 -->
-                    <androidx.recyclerview.widget.RecyclerView
-                        android:id="@+id/fileListRecyclerView"
-                        android:layout_width="match_parent"
-                        android:layout_height="200dp"
-                        android:background="#FAFAFA"
-                        android:scrollbars="vertical"
-                        android:scrollbarStyle="outsideOverlay"
-                        android:nestedScrollingEnabled="false"
-                        android:overScrollMode="never"
-                        android:clipToPadding="false"
-                        android:padding="4dp" />
-
-                </LinearLayout>
-
-                <!-- 单个文件下载（保留作为备用） -->
+                <!-- 单文件下载 -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:layout_marginTop="8dp"
-                    android:background="#FFF8DC"
-                    android:padding="6dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="手动："
-                        android:textSize="10sp"
-                        android:textColor="#333"
-                        android:layout_gravity="center_vertical"
-                        android:layout_marginEnd="4dp" />
+                    android:gravity="center_vertical">
 
                     <EditText
                         android:id="@+id/editText_file_name"
                         android:layout_width="0dp"
                         android:layout_weight="1"
-                        android:layout_height="32dp"
+                        android:layout_height="40dp"
                         android:hint="文件名"
-                        android:textSize="10sp"
-                        android:background="@android:color/white"
-                        android:padding="4dp"
-                        android:layout_marginEnd="4dp"
-                        android:inputType="text"
-                        android:maxLines="1" />
+                        android:textSize="12sp"
+                        android:background="@drawable/rounded_bg_light"
+                        android:padding="8dp"
+                        android:layout_marginEnd="8dp" />
 
-                    <Button
+                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/btn_download_single_file"
+                        style="@style/Widget.MaterialComponents.Button"
                         android:layout_width="wrap_content"
-                        android:layout_height="32dp"
+                        android:layout_height="40dp"
                         android:text="下载"
-                        android:textSize="10sp"
-                        android:background="@android:color/holo_red_light"
-                        android:textColor="@android:color/white"
-                        android:paddingStart="8dp"
-                        android:paddingEnd="8dp" />
+                        android:textSize="12sp"
+                        app:backgroundTint="#2196F3"
+                        app:cornerRadius="8dp" />
 
                 </LinearLayout>
 
             </LinearLayout>
 
-        </LinearLayout>
+        </androidx.core.widget.NestedScrollView>
 
-    </androidx.core.widget.NestedScrollView>
+    </LinearLayout>
 
-</LinearLayout>
+</com.google.android.material.card.MaterialCardView>

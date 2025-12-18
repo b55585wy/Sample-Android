@@ -58,6 +58,55 @@
             android:gravity="start|center_vertical"
             android:layout_marginTop="12dp" />
 
+        <!-- 录制时长配置 -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="录制时长设置"
+            android:textStyle="bold"
+            android:textSize="16sp"
+            android:layout_marginTop="20dp"
+            android:textColor="@color/teal_700"
+            android:paddingBottom="8dp"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <EditText
+                android:id="@+id/et_recording_duration"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:hint="录制时长(秒)"
+                android:inputType="number"
+                android:padding="15dp"
+                android:background="@drawable/rounded_edittext"
+                android:elevation="4dp"
+                android:textColor="@android:color/black"
+                android:textColorHint="@android:color/darker_gray"
+                android:gravity="start|center_vertical" />
+
+            <TextView
+                android:id="@+id/tv_duration_display"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="30秒"
+                android:textSize="14sp"
+                android:textColor="@android:color/darker_gray"
+                android:layout_marginStart="12dp" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="范围: 1-7200秒 (2小时)"
+            android:textSize="12sp"
+            android:textColor="@android:color/darker_gray"
+            android:layout_marginTop="4dp" />
+
         <!-- MAC 地址列表标题 -->
         <TextView
             android:visibility="gone"

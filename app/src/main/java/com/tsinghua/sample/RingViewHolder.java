@@ -18,6 +18,7 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -29,18 +30,24 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.lm.sdk.LmAPI;
 import com.lm.sdk.LogicalApi;
+import com.lm.sdk.inter.BluetoothConnectCallback;
 import com.lm.sdk.inter.ICustomizeCmdListener;
 import com.lm.sdk.utils.AppUtils;
 import com.lm.sdk.utils.BLEUtils;
 import com.lm.sdk.utils.GlobalParameterUtils;
 import com.tsinghua.sample.activity.ListActivity;
+import com.tsinghua.sample.activity.RingSettingsActivity;
 import com.tsinghua.sample.utils.BLEService;
 import com.tsinghua.sample.utils.NotificationHandler;
 
+import com.tsinghua.sample.core.DataLogger;
+import com.tsinghua.sample.core.SessionManager;
+import com.tsinghua.sample.core.TimeSync;
+
 import java.io.BufferedWriter;
-import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -58,6 +65,13 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
     private boolean infoVisible = false;
     private TextView tvLog;
     Button connectBtn;
+
+    // 新增：扫描和断开连接按钮
+    Button scanBtn;
+    Button disconnectBtn;
+    TextView statusText;
+    View headerLayout;
+    ImageView expandArrow;
 
     // 文件操作按钮
     Button requestFileListBtn;
@@ -87,7 +101,7 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
     Button formatFileSystemBtn;  // 格式化文件系统按钮
     Button stopCollectionBtn;
     TextView measurementStatusText;
-    private BufferedWriter logWriter;
+    private DataLogger logLogger;
     private boolean isRecordingRing = false;  // 控制是否记录日志
     private PlotView plotViewG, plotViewI;
     private PlotView plotViewR, plotViewX;
@@ -547,7 +561,15 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
         settingsBtn = itemView.findViewById(R.id.settingsBtn);
         infoLayout = itemView.findViewById(R.id.infoLayout);
         tvLog = itemView.findViewById(R.id.tvLog);
-        connectBtn = itemView.findViewById(R.id.connectBtn);
+        connectBtn = itemView.findViewById(R.id.connectBtn2);  // 使用新的可见连接按钮
+
+        // 新增：iOS风格头部和按钮
+        headerLayout = itemView.findViewById(R.id.headerLayout);
+        expandArrow = itemView.findViewById(R.id.expandArrow);
+        statusText = itemView.findViewById(R.id.statusText);
+        scanBtn = itemView.findViewById(R.id.scanBtn);
+        disconnectBtn = itemView.findViewById(R.id.disconnectBtn);
+
         requestFileListBtn = itemView.findViewById(R.id.requestFileListBtn);
         downloadSelectedBtn = itemView.findViewById(R.id.downloadSelectedBtn);
         stopCollectionBtn = itemView.findViewById(R.id.btn_stop_collection);
@@ -612,6 +634,27 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
         // 新增：停止采集按钮事件
         if (stopCollectionBtn != null) {
             stopCollectionBtn.setOnClickListener(v -> stopActiveMeasurement(itemView.getContext()));
+        }
+
+        // 新增：扫描按钮 - 打开设置页面进行扫描
+        if (scanBtn != null) {
+            scanBtn.setOnClickListener(v -> {
+                Intent intent = new Intent(itemView.getContext(), RingSettingsActivity.class);
+                intent.putExtra("deviceName", "指环");
+                itemView.getContext().startActivity(intent);
+            });
+        }
+
+        // 新增：断开连接按钮
+        if (disconnectBtn != null) {
+            disconnectBtn.setOnClickListener(v -> {
+                disconnectDevice(itemView.getContext());
+            });
+        }
+
+        // 新增：点击头部折叠/展开
+        if (headerLayout != null) {
+            headerLayout.setOnClickListener(v -> toggleInfo());
         }
 
         // 初始化文件列表
@@ -876,13 +919,9 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
                 updateMeasurementStatus("就绪");
             }
 
-            try {
-                if (logWriter != null) {
-                    logWriter.close();
-                    logWriter = null;
-                }
-            } catch (IOException e) {
-                e.printStackTrace();
+            if (logLogger != null) {
+                logLogger.close();
+                logLogger = null;
             }
         }
     }
@@ -906,20 +945,12 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
     private void createLogFile(Context context) throws IOException {
         SharedPreferences prefs = context.getSharedPreferences("AppSettings", MODE_PRIVATE);
         String experimentId = prefs.getString("experiment_id", "default");
-
-        String directoryPath = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
-                + "/Sample/" + experimentId + "/RingLog/";
-        File directory = new File(directoryPath);
-
-        if (!directory.exists()) {
-            if (!directory.mkdirs()) {
-                throw new IOException("创建目录失败: " + directoryPath);
-            }
-        }
-
-        String fileName = "RingSession_" + System.currentTimeMillis() + ".txt";
-        File logFile = new File(directory, fileName);
-        logWriter = new BufferedWriter(new FileWriter(logFile, true));
+        SessionManager sm = SessionManager.getInstance();
+        sm.ensureSession(context, experimentId);
+        File dir = sm.subDir("ring");
+        if (dir != null && !dir.exists()) dir.mkdirs();
+        File logFile = new File(dir, "ring_" + System.currentTimeMillis() + ".csv");
+        logLogger = new DataLogger(logFile, "wall_ms,log");
 
         Log.d("RingLog", "日志文件创建: " + logFile.getAbsolutePath());
     }
@@ -1433,9 +1464,11 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
                 RingViewHolder.this.recordLog(message);
             }
         });
+        // 注意：不再在此处创建session和DataLogger
+        // DataLogger的创建已移至RecordingCoordinator.startRecording()中
+        // 这样可以避免应用启动时就创建无意义的空session目录
 
         recordLog("✅ NotificationHandler日志记录已连接到RingViewHolder");
-        recordLog("现在NotificationHandler的所有操作都会记录到当前会话日志中");
     }
     public void updateRingTime(Context context) {
         if (isTimeUpdating) {
@@ -2072,6 +2105,33 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
             return;
         }
 
+        // 注册蓝牙连接状态回调
+        BLEService.setCallback(new BluetoothConnectCallback() {
+            @Override
+            public void onConnectReceived(String status, byte[] data) {
+                mainHandler.post(() -> {
+                    recordLog("【蓝牙状态】" + status);
+                    if ("连接成功".equals(status)) {
+                        updateConnectionStatus(true);
+                        Toast.makeText(context, "指环连接成功", Toast.LENGTH_SHORT).show();
+                    } else if ("连接失败".equals(status) || "未发现设备".equals(status)) {
+                        updateConnectionStatus(false);
+                        Toast.makeText(context, "指环连接失败: " + status, Toast.LENGTH_SHORT).show();
+                    } else if ("正在配对".equals(status)) {
+                        if (statusText != null) {
+                            statusText.setText("配对中...");
+                            statusText.setTextColor(0xFF2196F3); // 蓝色
+                        }
+                    }
+                });
+            }
+
+            @Override
+            public void onGetRssi(int rssi) {
+                // RSSI信号强度回调，可选处理
+            }
+        });
+
         BluetoothDevice device = BluetoothAdapter.getDefaultAdapter().getRemoteDevice(macAddress);
         if (device != null) {
             GlobalParameterUtils.getInstance().setDevice(device);
@@ -2079,11 +2139,28 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
             if (mBluetoothAdapter != null) {
                 if (mBluetoothAdapter.isEnabled()) {
                     if (device != null) {
+                        // 更新UI为连接中
+                        if (statusText != null) {
+                            statusText.setText("连接中...");
+                            statusText.setTextColor(0xFF2196F3); // 蓝色
+                        }
+
+                        // 设置前台服务配置，防止系统杀死BLE服务
+                        BLEUtils.contentTitle = "智能指环数据采集中";
+                        // 可选：设置点击通知后打开的界面
+                        // BLEUtils.pendingIntent = PendingIntent.getActivity(context, 0,
+                        //         new Intent(context, ListActivity.class), PendingIntent.FLAG_IMMUTABLE);
+
                         Intent mBleService = new Intent(context, BLEService.class);
                         mBleService.putExtra("CONNECT_DEVICE", device);
                         mBleService.putExtra("BLUETOOTH_HID_MODE", false);
                         if (context != null && AppUtils.isAppOnForeground(context)) {
-                            context.startService(mBleService);
+                            // 使用 startForegroundService 以支持 Android 8.0+
+                            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                context.startForegroundService(mBleService);
+                            } else {
+                                context.startService(mBleService);
+                            }
                         }
                     }
                 } else {
@@ -2097,6 +2174,46 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
     }
 
     /**
+     * 断开蓝牙设备连接
+     */
+    public void disconnectDevice(Context context) {
+        try {
+            // 停止BLE服务
+            Intent mBleService = new Intent(context, BLEService.class);
+            context.stopService(mBleService);
+
+            // 更新状态显示
+            if (statusText != null) {
+                statusText.setText("未连接");
+                statusText.setTextColor(0xFFFF9800); // 橙色
+            }
+
+            recordLog("【断开蓝牙设备】已断开连接");
+            Toast.makeText(context, "已断开连接", Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Log.e("Ring", "断开连接失败: " + e.getMessage());
+            Toast.makeText(context, "断开连接失败", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /**
+     * 更新连接状态显示
+     */
+    public void updateConnectionStatus(boolean connected) {
+        mainHandler.post(() -> {
+            if (statusText != null) {
+                if (connected) {
+                    statusText.setText("已连接");
+                    statusText.setTextColor(0xFF4CAF50); // 绿色
+                } else {
+                    statusText.setText("未连接");
+                    statusText.setTextColor(0xFFFF9800); // 橙色
+                }
+            }
+        });
+    }
+
+    /**
      * 增强的日志记录功能 - 记录所有重要操作
      */
     public void recordLog(String logMessage) {
@@ -2107,13 +2224,8 @@ public class RingViewHolder extends RecyclerView.ViewHolder {
         mainHandler.post(() -> tvLog.setText(logMessage));
 
         // 写入文件（仅在录制状态下）
-        if (isRecordingRing && logWriter != null) {
-            try {
-                logWriter.write(fullLogMessage + "\n");
-                logWriter.flush();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
+        if (isRecordingRing && logLogger != null) {
+            logLogger.writeLine(TimeSync.nowWallMillis() + "," + fullLogMessage);
         }
 
         Log.d("RingViewHolder", fullLogMessage);

@@ -30,6 +30,12 @@ public class PlotView extends View {
     // 增加一个阈值参数来检测数据变化的大小
     private final int MIN_Y_RANGE = 10;
 
+    // 性能优化：批量更新控制
+    private int pendingUpdates = 0;
+    private static final int BATCH_UPDATE_THRESHOLD = 5; // 累积5个数据点后才重绘
+    private long lastInvalidateTime = 0;
+    private static final long MIN_INVALIDATE_INTERVAL_MS = 33; // 最快30fps刷新
+
     public PlotView(Context context) {
         super(context);
         init();
@@ -74,13 +80,33 @@ public class PlotView extends View {
         // 添加新的数据点
         dataBuffer.add(value);
 
-        // 动态更新 Y 轴的最大最小值，只考虑当前显示的部分
-        updateYRange();
+        // 增量更新Y轴范围（避免每次遍历整个数组）
+        if (value > maxY) maxY = value;
+        if (value < minY) minY = value;
 
         // 动态调整Y轴范围，当数据变化较小的时候，扩大Y轴范围
         adjustYScale();
 
-        postInvalidate(); // 请求重新绘制
+        // 性能优化：批量重绘，避免每个数据点都触发UI刷新
+        pendingUpdates++;
+        long now = System.currentTimeMillis();
+        if (pendingUpdates >= BATCH_UPDATE_THRESHOLD ||
+            (now - lastInvalidateTime) >= MIN_INVALIDATE_INTERVAL_MS) {
+            pendingUpdates = 0;
+            lastInvalidateTime = now;
+            postInvalidate(); // 请求重新绘制
+        }
+    }
+
+    /**
+     * 强制刷新图表（用于录制结束时确保最后的数据显示）
+     */
+    public void forceRefresh() {
+        if (pendingUpdates > 0) {
+            pendingUpdates = 0;
+            lastInvalidateTime = System.currentTimeMillis();
+            postInvalidate();
+        }
     }
 
     // 清除所有数据并重置 Y 轴范围
@@ -88,12 +114,17 @@ public class PlotView extends View {
         dataBuffer.clear();
         maxY = Integer.MIN_VALUE;
         minY = Integer.MAX_VALUE;
+        pendingUpdates = 0;
         postInvalidate(); // 请求重新绘制
     }
 
-    // 动态更新 Y 轴的最大最小值
-    private void updateYRange() {
-        if (dataBuffer.isEmpty()) return;
+    // 动态更新 Y 轴的最大最小值（仅在clearPlot后或数据移除时需要完整重算）
+    private void recalculateYRange() {
+        if (dataBuffer.isEmpty()) {
+            maxY = Integer.MIN_VALUE;
+            minY = Integer.MAX_VALUE;
+            return;
+        }
 
         int localMaxY = Integer.MIN_VALUE;
         int localMinY = Integer.MAX_VALUE;

@@ -127,6 +127,13 @@ public class NotificationHandler {
     }
 
     private static LogRecorder logRecorder;
+    private static com.tsinghua.sample.core.DataLogger dataLogger;
+
+    // 数据去重：防止多个监听器导致同一数据被重复写入（使用数值比较避免字符串开销）
+    private static long lastWrittenFrameTs = -1;
+    private static long lastWrittenGreen = -1;
+    private static long lastWrittenRed = -1;
+    private static long lastWrittenIr = -1;
 
     // 添加设置日志记录器的方法
     public static void setLogRecorder(LogRecorder recorder) {
@@ -134,6 +141,16 @@ public class NotificationHandler {
         if (recorder != null) {
             recordLog("NotificationHandler日志记录器已连接到RingViewHolder");
         }
+    }
+
+    /** 结构化数据落盘（统一会话）。在 RingViewHolder 初始化时设置。 */
+    public static void setDataLogger(com.tsinghua.sample.core.DataLogger logger) {
+        dataLogger = logger;
+        // 重置去重状态，确保新录制会话能正常写入
+        lastWrittenFrameTs = -1;
+        lastWrittenGreen = -1;
+        lastWrittenRed = -1;
+        lastWrittenIr = -1;
     }
 
     // 添加内部recordLog方法
@@ -145,6 +162,8 @@ public class NotificationHandler {
         if (logRecorder != null) {
             logRecorder.recordLog("[NH] " + message);
         }
+        // 注意：不再写入 dataLogger，dataLogger 仅用于结构化数据记录
+        // 调试日志不应混入数据文件
     }
 
     // 设置回调方法
@@ -161,6 +180,14 @@ public class NotificationHandler {
     public static void setDeviceCommandCallback(DeviceCommandCallback callback) {
         deviceCommandCallback = callback;
         Log.d(TAG, "Device command callback set");
+    }
+
+    /**
+     * 检查指环是否已连接
+     * 使用 BLEService 的连接状态判断（与UI显示一致）
+     */
+    public static boolean isRingConnected() {
+        return BLEService.getConnectState() == BLEService.CONNECT_STATE_SUCCESS;
     }
 
     public static void setExerciseStatusCallback(ExerciseStatusCallback callback) {
@@ -1176,7 +1203,6 @@ public class NotificationHandler {
 
         // 读取时间戳 (对齐Python: unix_ms = int.from_bytes(ppg_led_data[2:10], byteorder='little'))
         long frameTimestamp = readUInt64LE(data, 6);  // 偏移4字节帧头 + 2字节(seq+data_num)
-        Log.e("TAG",String.valueOf(frameTimestamp));
         result.append("Frame Time: ").append(formatTimestamp(frameTimestamp)).append("\n");
 
         // 处理实时数据点并更新图表 - 对齐Python逻辑
@@ -1186,7 +1212,7 @@ public class NotificationHandler {
             int offset = 4 + 10 + i * 30;  // 4字节帧头 + 10字节数据头 + i * 30
 
             if (offset + 30 <= data.length) {
-                if (parseAndUpdateRealtimeDataPoint(data, offset)) {
+                if (parseAndUpdateRealtimeDataPoint(data, offset, frameTimestamp)) {
                     validPoints++;
                 }
             } else {
@@ -1202,7 +1228,7 @@ public class NotificationHandler {
     /**
      * 解析单个实时数据点并更新图表
      */
-    private static boolean parseAndUpdateRealtimeDataPoint(byte[] data, int offset) {
+    private static boolean parseAndUpdateRealtimeDataPoint(byte[] data, int offset, long frameTimestampMs) {
         try {
             // PPG数据 (前12字节，每个4字节)
             long green = readUInt32LE(data, offset);
@@ -1227,10 +1253,36 @@ public class NotificationHandler {
             // 更新实时图表显示
             updateRealtimeCharts(green, red, ir, accX, accY, accZ, gyroX, gyroY, gyroZ, temp0, temp1, temp2);
 
-            Log.v(TAG, String.format("Realtime point: G:%d, R:%d, IR:%d, AccX:%d, AccY:%d, AccZ:%d, GyroX:%d, GyroY:%d, GyroZ:%d, T0:%d, T1:%d, T2:%d",
-                    green, red, ir, accX, accY, accZ, gyroX, gyroY, gyroZ, temp0, temp1, temp2));
-            recordLog(String.format("实时数据点: Green=%d, Red=%d, IR=%d, AccX=%d, AccY=%d, AccZ=%d, GyroX=%d, GyroY=%d, GyroZ=%d, Temp0=%d, Temp1=%d, Temp2=%d",
-                    green, red, ir, accX, accY, accZ, gyroX, gyroY, gyroZ, temp0, temp1, temp2));
+            // 结构化数据写入（如果有 dataLogger）- 带去重逻辑
+            if (dataLogger != null) {
+                // 去重：使用数值直接比较（避免字符串开销）
+                boolean isDuplicate = (frameTimestampMs == lastWrittenFrameTs
+                        && green == lastWrittenGreen
+                        && red == lastWrittenRed
+                        && ir == lastWrittenIr);
+
+                if (!isDuplicate) {
+                    lastWrittenFrameTs = frameTimestampMs;
+                    lastWrittenGreen = green;
+                    lastWrittenRed = red;
+                    lastWrittenIr = ir;
+
+                    long wall = com.tsinghua.sample.core.TimeSync.nowWallMillis();
+                    String line = String.format(
+                            Locale.US,
+                            "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
+                            wall, frameTimestampMs, green, red, ir,
+                            accX, accY, accZ,
+                            gyroX, gyroY, gyroZ,
+                            temp0, temp1, temp2
+                    );
+                    dataLogger.writeLine(line);
+                }
+            }
+
+            // 性能优化：移除每个数据点的日志输出，避免刷屏和性能开销
+            // 仅保留VERBOSE级别的日志用于调试
+            Log.v(TAG, String.format("Realtime point: G:%d, R:%d, IR:%d", green, red, ir));
 
             return true;
         } catch (Exception e) {
@@ -1295,7 +1347,6 @@ public class NotificationHandler {
         }
 
         long frameTimestamp = readUInt64LE(data, 6);
-        Log.e("TAG",String.valueOf(frameTimestamp));
         result.append("Frame Time: ").append(formatTimestamp(frameTimestamp)).append("\n");
 
         // 处理数据点
@@ -1303,7 +1354,7 @@ public class NotificationHandler {
         for (int i = 0; i < dataNum; i++) {
             int offset = 4 + 10 + i * 30;
             if (offset + 30 <= data.length) {
-                if (parseAndUpdateRealtimeDataPoint(data, offset)) {
+                if (parseAndUpdateRealtimeDataPoint(data, offset, frameTimestamp)) {
                     validPoints++;
                 }
             }

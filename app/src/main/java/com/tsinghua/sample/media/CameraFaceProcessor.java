@@ -7,7 +7,6 @@ import android.content.pm.PackageManager;
 import android.content.res.AssetManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.graphics.Color;
 import android.graphics.ImageFormat;
 import android.graphics.Matrix;
 import android.hardware.camera2.CameraAccessException;
@@ -19,7 +18,7 @@ import android.hardware.camera2.CameraMetadata;
 import android.hardware.camera2.CaptureRequest;
 import android.media.Image;
 import android.media.ImageReader;
-import android.media.MediaRecorder;
+import android.os.Build;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -34,27 +33,26 @@ import androidx.core.app.ActivityCompat;
 import androidx.fragment.app.FragmentActivity;
 
 
-import com.arthenica.ffmpegkit.FFmpegKit;
-import com.arthenica.ffmpegkit.ReturnCode;
 import com.google.mediapipe.solutions.facemesh.FaceMesh;
 import com.google.mediapipe.solutions.facemesh.FaceMeshOptions;
+import com.tsinghua.sample.core.SessionManager;
 import com.tsinghua.sample.utils.FacePreprocessor;
 import com.tsinghua.sample.utils.HeartRateEstimator;
 import com.tsinghua.sample.utils.PlotView;
 
-import org.opencv.android.Utils;
-import org.opencv.core.Mat;
-import org.opencv.core.Size;
-import org.opencv.videoio.VideoWriter;
+import android.media.MediaCodec;
+import android.media.MediaCodecInfo;
+import android.media.MediaFormat;
+import android.media.MediaMuxer;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.PrintWriter;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
-import java.util.Comparator;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class CameraFaceProcessor {
     private static final String TAG = "CameraFaceProcessor";
@@ -63,6 +61,15 @@ public class CameraFaceProcessor {
     private HeartRateEstimator heartRateEstimator;
 
     private FacePreprocessor facePreProcessor;
+
+    // 心率更新回调
+    private HeartRateEstimator.OnHeartRateListener heartRateListener;
+
+    // 异步初始化相关
+    private volatile boolean isInitialized = false;
+    private OnInitializedListener initListener;
+    private final ExecutorService initExecutor = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(android.os.Looper.getMainLooper());
 
 
     private CameraDevice cameraDevice;
@@ -74,7 +81,6 @@ public class CameraFaceProcessor {
 
     private Handler backgroundHandler;
     private HandlerThread backgroundThread;
-    private VideoWriter writer;
 
 
     private FaceMesh faceMesh;
@@ -86,12 +92,31 @@ public class CameraFaceProcessor {
 
     // Callbacks
     private CameraFaceProcessorCallback callback;
-    private MediaRecorder mediaRecorder;
-    private Surface recorderSurface;
     private String currentVideoPath;
+    private volatile boolean isRecording = false;
     private File tempDir;         // 用来存每帧的 PNG
     private int frameCount = 0;   // 帧计数
-    private String outputVideoPath;
+
+    // 使用MediaCodec+MediaMuxer录制（避免MediaRecorder需要额外Surface，且比OpenCV VideoWriter更稳定）
+    private MediaCodec mediaCodec;
+    private MediaMuxer mediaMuxer;
+    private int videoTrackIndex = -1;
+    private boolean muxerStarted = false;
+    private long recordingStartTimeNs = 0;  // 录制开始时间（纳秒）
+    private static final int FRAME_RATE = 30;
+    private static final int I_FRAME_INTERVAL = 1;
+    private static final int VIDEO_WIDTH = 480;  // 旋转后的宽度
+    private static final int VIDEO_HEIGHT = 640; // 旋转后的高度
+    private final Object encoderLock = new Object();
+
+    // 帧计数统计（用于调试）
+    private int encodedFrameCount = 0;
+    private int droppedFrameCount = 0;
+
+    // 异步文件写入线程池
+    private final ExecutorService fileWriteExecutor = Executors.newSingleThreadExecutor();
+    // 视频编码线程池（独立于文件写入）
+    private final ExecutorService videoEncoderExecutor = Executors.newSingleThreadExecutor();
     private com.tsinghua.sample.utils.PlotView plotView;
     public interface CameraFaceProcessorCallback {
         void onCameraStarted();
@@ -99,6 +124,22 @@ public class CameraFaceProcessor {
         void onError(String error);
         void onFaceDetected(Bitmap faceBitmap);
         void onFaceProcessingResult(Object result); // Replace Object with your specific result type
+    }
+
+    /**
+     * 初始化完成回调
+     */
+    public interface OnInitializedListener {
+        void onInitialized();
+        void onInitializeFailed(String error);
+    }
+
+    public void setOnInitializedListener(OnInitializedListener listener) {
+        this.initListener = listener;
+    }
+
+    public boolean isInitialized() {
+        return isInitialized;
     }
 
     public CameraFaceProcessor(Context activity, SurfaceView surfaceView, PlotView plotView)  {
@@ -162,7 +203,8 @@ public class CameraFaceProcessor {
 
     private void setupImageReader(int width, int height) {
         if (width > 0 && height > 0) {
-            imageReader = ImageReader.newInstance(640, 480, ImageFormat.JPEG, 2);
+            // 增加缓冲区数量从2到4，减少帧丢失
+            imageReader = ImageReader.newInstance(640, 480, ImageFormat.JPEG, 4);
             imageReader.setOnImageAvailableListener(onImageAvailableListener, backgroundHandler);
         } else {
             Log.e(TAG, "Invalid dimensions for ImageReader: width=" + width + ", height=" + height);
@@ -172,35 +214,294 @@ public class CameraFaceProcessor {
         }
     }
 
+    /**
+     * 初始化 MediaCodec + MediaMuxer 用于视频录制
+     */
+    private void setupVideoEncoder() {
+        try {
+            SharedPreferences prefs = activity.getSharedPreferences("AppSettings", Context.MODE_PRIVATE);
+            String experimentId = prefs.getString("experiment_id", "default");
+            SessionManager sm = SessionManager.getInstance();
+            File sessionDir = sm.ensureSession(activity, experimentId);
+
+            if (sessionDir == null) {
+                Log.e(TAG, "无法创建 session 目录");
+                return;
+            }
+
+            File frontDir = new File(sessionDir, "front");
+            if (!frontDir.exists()) frontDir.mkdirs();
+
+            String timestamp = String.valueOf(System.currentTimeMillis());
+            currentVideoPath = new File(frontDir, "front_camera_" + timestamp + ".mp4").getAbsolutePath();
+
+            synchronized (encoderLock) {
+                // 配置 MediaFormat
+                MediaFormat format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, VIDEO_WIDTH, VIDEO_HEIGHT);
+                format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar);
+                format.setInteger(MediaFormat.KEY_BIT_RATE, 8000000); // 8 Mbps 高画质
+                format.setInteger(MediaFormat.KEY_FRAME_RATE, FRAME_RATE);
+                format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, I_FRAME_INTERVAL);
+                // 使用 CBR 模式确保比特率
+                format.setInteger(MediaFormat.KEY_BITRATE_MODE, MediaCodecInfo.EncoderCapabilities.BITRATE_MODE_CBR);
+
+                // 创建编码器
+                mediaCodec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC);
+                mediaCodec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
+                mediaCodec.start();
+
+                // 创建 Muxer
+                mediaMuxer = new MediaMuxer(currentVideoPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+                videoTrackIndex = -1;
+                muxerStarted = false;
+                recordingStartTimeNs = System.nanoTime();  // 记录开始时间
+                encodedFrameCount = 0;  // 重置帧计数
+                droppedFrameCount = 0;
+                isRecording = true;
+
+                Log.d(TAG, "MediaCodec + MediaMuxer 初始化成功: " + currentVideoPath);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "MediaCodec 初始化异常", e);
+            releaseVideoEncoder();
+        }
+    }
+
+    /**
+     * 释放 MediaCodec + MediaMuxer 资源
+     */
+    private void releaseVideoEncoder() {
+        Log.d(TAG, "releaseVideoEncoder called, isRecording=" + isRecording);
+        Log.d(TAG, "录制统计 - 总编码帧数: " + encodedFrameCount + ", 丢帧数: " + droppedFrameCount);
+        synchronized (encoderLock) {
+            isRecording = false;
+
+            if (mediaCodec != null) {
+                try {
+                    // 发送 EOS 并等待处理完成
+                    drainEncoder(true);
+                    mediaCodec.stop();
+                    mediaCodec.release();
+                    Log.d(TAG, "MediaCodec released");
+                } catch (Exception e) {
+                    Log.e(TAG, "释放 MediaCodec 失败", e);
+                }
+                mediaCodec = null;
+            }
+
+            if (mediaMuxer != null) {
+                try {
+                    if (muxerStarted) {
+                        mediaMuxer.stop();
+                    }
+                    mediaMuxer.release();
+                    Log.d(TAG, "MediaMuxer released, file: " + currentVideoPath);
+                } catch (Exception e) {
+                    Log.e(TAG, "释放 MediaMuxer 失败", e);
+                }
+                mediaMuxer = null;
+            }
+
+            videoTrackIndex = -1;
+            muxerStarted = false;
+        }
+    }
+
+    /**
+     * 将帧写入编码器（异步执行，避免阻塞相机回调）
+     */
+    private void writeFrameToVideo(Bitmap bitmap) {
+        if (!isRecording || mediaCodec == null) {
+            return;
+        }
+
+        // 复制bitmap以便在后台线程使用
+        final Bitmap bitmapCopy = bitmap.copy(Bitmap.Config.ARGB_8888, false);
+        final long captureTimeNs = System.nanoTime();
+
+        videoEncoderExecutor.execute(() -> {
+            writeFrameToVideoInternal(bitmapCopy, captureTimeNs);
+            bitmapCopy.recycle();
+        });
+    }
+
+    /**
+     * 实际的帧写入操作（在后台线程执行）
+     */
+    private void writeFrameToVideoInternal(Bitmap bitmap, long captureTimeNs) {
+        synchronized (encoderLock) {
+            if (!isRecording || mediaCodec == null) {
+                return;
+            }
+            try {
+                // 获取输入缓冲区（增加超时到100ms以减少丢帧）
+                int inputBufferIndex = mediaCodec.dequeueInputBuffer(100000);
+                if (inputBufferIndex >= 0) {
+                    ByteBuffer inputBuffer = mediaCodec.getInputBuffer(inputBufferIndex);
+                    if (inputBuffer != null) {
+                        inputBuffer.clear();
+                        // 将 Bitmap 转换为 NV12 格式
+                        byte[] yuv = bitmapToNv12(bitmap);
+                        inputBuffer.put(yuv);
+                        // 使用捕获时间戳（纳秒转微秒）
+                        long presentationTimeUs = (captureTimeNs - recordingStartTimeNs) / 1000;
+                        mediaCodec.queueInputBuffer(inputBufferIndex, 0, yuv.length, presentationTimeUs, 0);
+                        encodedFrameCount++;
+                        if (encodedFrameCount % 30 == 0) {
+                            Log.d(TAG, "已编码帧数: " + encodedFrameCount + ", 丢帧: " + droppedFrameCount);
+                        }
+                    }
+                } else {
+                    droppedFrameCount++;
+                    if (droppedFrameCount % 10 == 0) {
+                        Log.w(TAG, "丢帧（无可用缓冲区）, 已丢弃: " + droppedFrameCount);
+                    }
+                }
+                // 处理输出
+                drainEncoder(false);
+            } catch (Exception e) {
+                Log.e(TAG, "写入帧失败", e);
+            }
+        }
+    }
+
+    /**
+     * 从编码器读取输出数据并写入 Muxer
+     * 注意：使用 ByteBuffer 模式时，不能调用 signalEndOfInputStream()
+     * 需要通过发送带 BUFFER_FLAG_END_OF_STREAM 标志的空缓冲区来表示结束
+     */
+    private void drainEncoder(boolean endOfStream) {
+        if (endOfStream && mediaCodec != null) {
+            // ByteBuffer 模式：发送带 EOS 标志的空缓冲区
+            try {
+                int inputBufferIndex = mediaCodec.dequeueInputBuffer(10000);
+                if (inputBufferIndex >= 0) {
+                    long presentationTimeUs = (System.nanoTime() - recordingStartTimeNs) / 1000;
+                    mediaCodec.queueInputBuffer(inputBufferIndex, 0, 0, presentationTimeUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "发送 EOS 失败", e);
+            }
+        }
+
+        MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
+        while (true) {
+            int outputBufferIndex = mediaCodec.dequeueOutputBuffer(bufferInfo, 10000);
+            if (outputBufferIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                if (!endOfStream) break;
+            } else if (outputBufferIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                if (muxerStarted) {
+                    Log.w(TAG, "Format changed after muxer started");
+                } else {
+                    MediaFormat newFormat = mediaCodec.getOutputFormat();
+                    videoTrackIndex = mediaMuxer.addTrack(newFormat);
+                    mediaMuxer.start();
+                    muxerStarted = true;
+                    Log.d(TAG, "Muxer started with format: " + newFormat);
+                }
+            } else if (outputBufferIndex >= 0) {
+                ByteBuffer outputBuffer = mediaCodec.getOutputBuffer(outputBufferIndex);
+                if (outputBuffer != null && muxerStarted && (bufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0) {
+                    outputBuffer.position(bufferInfo.offset);
+                    outputBuffer.limit(bufferInfo.offset + bufferInfo.size);
+                    mediaMuxer.writeSampleData(videoTrackIndex, outputBuffer, bufferInfo);
+                }
+                mediaCodec.releaseOutputBuffer(outputBufferIndex, false);
+                if ((bufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                    break;
+                }
+            }
+        }
+    }
+
+    /**
+     * 将 Bitmap 转换为 NV12 (YUV420SemiPlanar) 格式
+     * NV12: Y plane followed by interleaved UV plane
+     */
+    private byte[] bitmapToNv12(Bitmap bitmap) {
+        int width = bitmap.getWidth();
+        int height = bitmap.getHeight();
+        int[] argb = new int[width * height];
+        bitmap.getPixels(argb, 0, width, 0, 0, width, height);
+
+        byte[] yuv = new byte[width * height * 3 / 2];
+        int yIndex = 0;
+        int uvIndex = width * height;
+
+        for (int j = 0; j < height; j++) {
+            for (int i = 0; i < width; i++) {
+                int argbValue = argb[j * width + i];
+                int r = (argbValue >> 16) & 0xFF;
+                int g = (argbValue >> 8) & 0xFF;
+                int b = argbValue & 0xFF;
+
+                // RGB to YUV
+                int y = ((66 * r + 129 * g + 25 * b + 128) >> 8) + 16;
+                int u = ((-38 * r - 74 * g + 112 * b + 128) >> 8) + 128;
+                int v = ((112 * r - 94 * g - 18 * b + 128) >> 8) + 128;
+
+                yuv[yIndex++] = (byte) Math.max(0, Math.min(255, y));
+
+                // NV12: UV interleaved, subsampled 2x2
+                if (j % 2 == 0 && i % 2 == 0) {
+                    yuv[uvIndex++] = (byte) Math.max(0, Math.min(255, u));
+                    yuv[uvIndex++] = (byte) Math.max(0, Math.min(255, v));
+                }
+            }
+        }
+        return yuv;
+    }
+
     private final ImageReader.OnImageAvailableListener onImageAvailableListener = reader -> {
         Image image = null;
         try {
             image = reader.acquireNextImage();
             if (image != null && isCameraRunning) {
-
+                // 获取 JPEG 数据
                 ByteBuffer buffer = image.getPlanes()[0].getBuffer();
                 byte[] bytes = new byte[buffer.remaining()];
                 buffer.get(bytes);
-                long ts = System.currentTimeMillis();
-                String filename = String.format("%d_frame_%06d.jpg", ts, frameCount);
-                File f = new File(tempDir, filename);
-                try (FileOutputStream out = new FileOutputStream(f)) {
-                    out.write(bytes);
-                }
-                Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length)
-                        .copy(Bitmap.Config.ARGB_8888, true);
 
-                // 4. 旋转、送给 FaceMesh
-                Bitmap rotated = rotateBitmap(bitmap, 270);
-                long timestamp = System.nanoTime();
-
-                faceMesh.send(rotated, timestamp);
-                faceMesh.setResultListener(result -> {
-                    if (isCameraRunning) {
-                        // 如果还需要原始方向的 bitmap 作后续处理，可以再 copy 一份
-                        facePreProcessor.addFrameResults(result, rotated.copy(Bitmap.Config.ARGB_8888, true));
+                // 异步保存 JPEG 帧（不阻塞相机回调）
+                final int currentFrameCount = frameCount++;
+                final long ts = System.currentTimeMillis();
+                fileWriteExecutor.execute(() -> {
+                    try {
+                        String filename = String.format("%d_frame_%06d.jpg", ts, currentFrameCount);
+                        File f = new File(tempDir, filename);
+                        try (FileOutputStream out = new FileOutputStream(f)) {
+                            out.write(bytes);
+                        }
+                    } catch (Exception e) {
+                        Log.e(TAG, "异步保存帧失败", e);
                     }
                 });
+
+                // 解码并旋转图像
+                Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+                if (bitmap != null) {
+                    bitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true);
+                    Bitmap rotated = rotateBitmap(bitmap, 270);
+
+                    // 写入视频帧（即使模型未加载也录制）
+                    if (rotated != null && isRecording) {
+                        writeFrameToVideo(rotated);
+                    }
+
+                    // 模型未加载完成时跳过AI处理
+                    if (!isInitialized || facePreProcessor == null) {
+                        return;
+                    }
+
+                    long timestamp = System.nanoTime();
+                    faceMesh.send(rotated, timestamp);
+                    final Bitmap finalRotated = rotated;
+                    faceMesh.setResultListener(result -> {
+                        if (isCameraRunning) {
+                            facePreProcessor.addFrameResults(result, finalRotated.copy(Bitmap.Config.ARGB_8888, true));
+                        }
+                    });
+                }
             }
         } catch (Exception e) {
             Log.e(TAG, "Error processing image", e);
@@ -221,40 +522,14 @@ public class CameraFaceProcessor {
         }
         SharedPreferences prefs = activity.getSharedPreferences("AppSettings", Context.MODE_PRIVATE);
         String experimentId = prefs.getString("experiment_id", "default");
-        String baseDir = Environment
+        final String baseDir = Environment
                 .getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
                 + "/Sample/" + experimentId + "/"+"Inference_"+System.currentTimeMillis()+"/";
         tempDir = new File(baseDir + "frames_" + System.currentTimeMillis() + "/");
         if (!tempDir.exists()) tempDir.mkdirs();
         frameCount = 0;
-        String format = prefs.getString("video_format", "mp4");
-        Log.e("TAG",format);
-        String filename = System.currentTimeMillis() + (format.equals("avi") ? ".avi" : ".mp4");
-        outputVideoPath = baseDir + filename;
-        AssetManager assetManager = activity.getAssets();
 
-        try {
-            InputStream modelStream = assetManager.open("model.onnx");
-            InputStream stateJsonStream = assetManager.open("state.json");
-            InputStream welchModelStream = assetManager.open("welch_psd.onnx");
-            InputStream hrModelStream = assetManager.open("get_hr.onnx");
-            heartRateEstimator = new HeartRateEstimator(
-                    modelStream,
-                    stateJsonStream,
-                    welchModelStream,
-                    hrModelStream,
-                    plotView,
-                    baseDir
-            );
-
-
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-        facePreProcessor = new FacePreprocessor(activity,heartRateEstimator);
-
+        // 先启动摄像头预览（快速操作）
         CameraManager manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
         try {
             String cameraId = getFrontFacingCameraId(manager);
@@ -267,6 +542,56 @@ public class CameraFaceProcessor {
             }
 
             manager.openCamera(cameraId, stateCallback, backgroundHandler);
+
+            // 异步加载模型（避免ANR）
+            initExecutor.execute(() -> {
+                try {
+                    Log.d(TAG, "开始异步加载ONNX模型...");
+                    long startTime = System.currentTimeMillis();
+
+                    AssetManager assetManager = activity.getAssets();
+                    InputStream modelStream = assetManager.open("model.onnx");
+                    InputStream stateJsonStream = assetManager.open("state.json");
+                    InputStream welchModelStream = assetManager.open("welch_psd.onnx");
+                    InputStream hrModelStream = assetManager.open("get_hr.onnx");
+
+                    heartRateEstimator = new HeartRateEstimator(
+                            modelStream,
+                            stateJsonStream,
+                            welchModelStream,
+                            hrModelStream,
+                            plotView,
+                            baseDir
+                    );
+
+                    // 设置心率回调监听器
+                    if (heartRateListener != null) {
+                        heartRateEstimator.setOnHeartRateListener(heartRateListener);
+                    }
+
+                    facePreProcessor = new FacePreprocessor(activity, heartRateEstimator);
+                    isInitialized = true;
+
+                    long loadTime = System.currentTimeMillis() - startTime;
+                    Log.d(TAG, "ONNX模型加载完成，耗时: " + loadTime + "ms");
+
+                    // 通知初始化完成
+                    mainHandler.post(() -> {
+                        if (initListener != null) {
+                            initListener.onInitialized();
+                        }
+                    });
+
+                } catch (Exception e) {
+                    Log.e(TAG, "模型加载失败", e);
+                    mainHandler.post(() -> {
+                        if (initListener != null) {
+                            initListener.onInitializeFailed(e.getMessage());
+                        }
+                    });
+                }
+            });
+
         } catch (CameraAccessException e) {
             Log.e(TAG, "Camera access exception", e);
             if (callback != null) {
@@ -277,6 +602,31 @@ public class CameraFaceProcessor {
 
     public void stopCamera() {
         isCameraRunning = false;
+        isInitialized = false;
+
+        // 停止并释放 MediaCodec 编码器
+        releaseVideoEncoder();
+
+        // 关闭初始化线程池
+        if (initExecutor != null && !initExecutor.isShutdown()) {
+            initExecutor.shutdownNow();
+        }
+
+        // 关闭文件写入线程池
+        if (fileWriteExecutor != null && !fileWriteExecutor.isShutdown()) {
+            fileWriteExecutor.shutdown();
+        }
+
+        // 关闭视频编码线程池
+        if (videoEncoderExecutor != null && !videoEncoderExecutor.isShutdown()) {
+            videoEncoderExecutor.shutdown();
+            try {
+                // 等待编码任务完成
+                videoEncoderExecutor.awaitTermination(3, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Log.w(TAG, "Video encoder shutdown interrupted");
+            }
+        }
 
         if (cameraCaptureSession != null) {
             cameraCaptureSession.close();
@@ -294,89 +644,6 @@ public class CameraFaceProcessor {
         if (callback != null) {
             callback.onCameraStopped();
         }
-        new Thread(this::generateAndUploadVideo).start();
-
-    }
-    private void generateAndUploadVideo() {
-        try {
-            // 先补全丢帧
-            checkAndFillMissingFrames();
-
-            // 1. 生成列表文件 frames.txt
-            File listFile = new File(tempDir, "frames.txt");
-            try (PrintWriter pw = new PrintWriter(listFile)) {
-                File[] jpgs = tempDir.listFiles((d, n) -> n.endsWith(".jpg"));
-                if (jpgs == null) throw new IOException("找不到帧文件");
-                // 按文件名（即时间戳+序号）排序
-                Arrays.sort(jpgs, Comparator.comparing(File::getName));
-                for (File f : jpgs) {
-                    // 注意：路径中如果有单引号，要转义
-                    pw.println("file '" + f.getAbsolutePath().replace("'", "\\'") + "'");
-                }
-            }
-
-            SharedPreferences prefs = activity.getSharedPreferences("AppSettings", Context.MODE_PRIVATE);
-            String format = prefs.getString("video_format", "mp4");
-
-            // 确定输出文件和 codec 参数
-            String codecOpts;
-            String outPath;
-            if ("avi".equals(format)) {
-                outPath = outputVideoPath.replaceAll("\\.mp4$", ".avi");
-            } else {
-                outPath = outputVideoPath.replaceAll("\\.avi$", ".mp4");
-            }
-            codecOpts = "-c:v mpeg4 -qscale:v 5";
-
-            File outputVideo = new File(outPath);
-            if (outputVideo.exists()) outputVideo.delete();
-
-            String cmd = String.format(
-                    "-f concat -safe 0 -i \"%s\" %s -pix_fmt yuv420p \"%s\"",
-                    listFile.getAbsolutePath(),
-                    codecOpts,
-                    outputVideo.getAbsolutePath()
-            );
-
-
-            com.arthenica.ffmpegkit.FFmpegSession session = FFmpegKit.execute(cmd);
-            if (ReturnCode.isSuccess(session.getReturnCode())) {
-                Log.d(TAG, "视频生成成功: " + outputVideo.getAbsolutePath());
-            } else {
-                Log.e(TAG, "视频生成失败: " + session.getFailStackTrace());
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "拼接视频失败", e);
-            if (callback != null) callback.onError("拼接视频失败: " + e.getMessage());
-        }
-    }
-
-
-    private void checkAndFillMissingFrames() throws IOException {
-        File[] files = tempDir.listFiles((d, n) -> n.endsWith(".jpg"));
-        if (files == null) return;
-        Arrays.sort(files, Comparator.comparing(File::getName));
-        for (int i = 1; i <= frameCount; i++) {
-            File f = new File(tempDir, String.format("frame_%06d.jpg", i));
-            if (!f.exists()) {
-                Log.w(TAG, "帧丢失，生成占位: " + f.getName());
-                Bitmap placeholder = generatePlaceholderBitmap(surfaceView.getWidth(), surfaceView.getHeight());
-                try (FileOutputStream out = new FileOutputStream(f)) {
-                    placeholder.compress(Bitmap.CompressFormat.JPEG, 80, out);
-                }
-            }
-        }
-    }
-    private Bitmap generatePlaceholderBitmap(int widths,int heights) {
-        int width = widths;  // 可以根据需要调整大小
-        int height = heights;
-        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                bitmap.setPixel(x, y, Color.BLACK); // 全黑图像
-            }
-        }
-        return bitmap;
     }
     private final CameraDevice.StateCallback stateCallback = new CameraDevice.StateCallback() {
         @Override
@@ -412,12 +679,21 @@ public class CameraFaceProcessor {
                 return;
             }
 
+            // 初始化 MediaCodec 编码器（在 ImageReader 回调中写入帧，不需要额外 Surface）
+            setupVideoEncoder();
+
+            // 使用 TEMPLATE_PREVIEW（只需要2个Surface：预览 + ImageReader）
             captureRequestBuilder = cameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
             captureRequestBuilder.addTarget(imageReader.getSurface());
             captureRequestBuilder.addTarget(surfaceHolder.getSurface());
 
+            // 构建输出 Surface 列表（只有2个）
+            java.util.List<Surface> outputSurfaces = new java.util.ArrayList<>();
+            outputSurfaces.add(surfaceHolder.getSurface());
+            outputSurfaces.add(imageReader.getSurface());
+
             cameraDevice.createCaptureSession(
-                    Arrays.asList(surfaceHolder.getSurface(), imageReader.getSurface()),
+                    outputSurfaces,
                     new CameraCaptureSession.StateCallback() {
                         @Override
                         public void onConfigured(@NonNull CameraCaptureSession session) {
@@ -425,6 +701,8 @@ public class CameraFaceProcessor {
                             cameraCaptureSession = session;
                             updatePreview();
                             isCameraRunning = true;
+                            Log.d(TAG, "Camera preview started, VideoWriter isRecording=" + isRecording);
+
                             if (callback != null) {
                                 callback.onCameraStarted();
                             }
@@ -505,6 +783,33 @@ public class CameraFaceProcessor {
     public boolean isCameraRunning() {
         return isCameraRunning;
     }
+
+    /**
+     * 设置心率更新监听器
+     */
+    public void setOnHeartRateListener(HeartRateEstimator.OnHeartRateListener listener) {
+        this.heartRateListener = listener;
+        // 如果 HeartRateEstimator 已创建，直接设置监听器
+        if (heartRateEstimator != null) {
+            heartRateEstimator.setOnHeartRateListener(listener);
+        }
+    }
+
+    /**
+     * 设置预加载的HeartRateEstimator（跳过模型加载）
+     */
+    public void setPreloadedEstimator(HeartRateEstimator estimator, PlotView plotView) {
+        this.heartRateEstimator = estimator;
+        if (estimator != null) {
+            estimator.setPlotView(plotView);
+            if (heartRateListener != null) {
+                estimator.setOnHeartRateListener(heartRateListener);
+            }
+            facePreProcessor = new FacePreprocessor(activity, heartRateEstimator);
+            isInitialized = true;
+        }
+    }
+
     public  Bitmap convertYUVToBitmap(Image image, int rotationDegrees) {
         if (image == null || image.getFormat() != ImageFormat.YUV_420_888) {
             Log.e(TAG, "Invalid image format or null image.");

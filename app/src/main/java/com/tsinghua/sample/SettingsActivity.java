@@ -8,6 +8,7 @@ import android.text.Editable;
 import android.text.TextWatcher;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -31,6 +32,8 @@ public class SettingsActivity extends AppCompatActivity {
     private MacAdapter macAdapter;
     private List<MacItem> macList;
     private EditText etExperimentId; // 添加变量
+    private EditText etRecordingDuration; // 录制时长
+    private TextView tvDurationDisplay; // 时长显示
 
 
     @Override
@@ -51,7 +54,15 @@ public class SettingsActivity extends AppCompatActivity {
         int savedTime = prefs.getInt("time_parameter", 0);
         int savedYAxisMin = prefs.getInt("y_axis_min", 0);
         String savedExperimentId = prefs.getString("experiment_id", "");
+        int savedRecordingDuration = prefs.getInt("recording_duration", 30); // 默认30秒
+
         etExperimentId.setText(savedExperimentId);
+
+        // 初始化录制时长配置
+        etRecordingDuration = findViewById(R.id.et_recording_duration);
+        tvDurationDisplay = findViewById(R.id.tv_duration_display);
+        etRecordingDuration.setText(String.valueOf(savedRecordingDuration));
+        updateDurationDisplay(savedRecordingDuration);
         // 设置默认值
         if (savedTime != 0) {
             etTimeParam.setText(String.valueOf(savedTime));
@@ -106,6 +117,29 @@ public class SettingsActivity extends AppCompatActivity {
 
             @Override
             public void afterTextChanged(Editable editable) {}
+        });
+
+        // 录制时长配置监听
+        etRecordingDuration.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                try {
+                    int duration = Integer.parseInt(s.toString().trim());
+                    // 限制范围 1-7200 秒
+                    if (duration < 1) duration = 1;
+                    if (duration > 7200) duration = 7200;
+                    prefs.edit().putInt("recording_duration", duration).apply();
+                    updateDurationDisplay(duration);
+                } catch (NumberFormatException e) {
+                    // 忽略无效输入
+                }
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {}
         });
 
         // 加载 MAC 地址列表
@@ -182,5 +216,29 @@ public class SettingsActivity extends AppCompatActivity {
     // 加载选中的 MAC 地址
     private String loadSelectedMacAddress() {
         return prefs.getString("mac_address", "");
+    }
+
+    // 更新录制时长显示
+    private void updateDurationDisplay(int seconds) {
+        if (tvDurationDisplay == null) return;
+        if (seconds < 60) {
+            tvDurationDisplay.setText(seconds + "秒");
+        } else if (seconds < 3600) {
+            int min = seconds / 60;
+            int sec = seconds % 60;
+            if (sec == 0) {
+                tvDurationDisplay.setText(min + "分钟");
+            } else {
+                tvDurationDisplay.setText(min + "分" + sec + "秒");
+            }
+        } else {
+            int hour = seconds / 3600;
+            int min = (seconds % 3600) / 60;
+            if (min == 0) {
+                tvDurationDisplay.setText(hour + "小时");
+            } else {
+                tvDurationDisplay.setText(hour + "小时" + min + "分");
+            }
+        }
     }
 }

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- CONTEC CMS50E 血氧仪 - 常见VID -->
+    <!-- Silicon Labs CP210x (常用于CONTEC设备) -->
+    <usb-device vendor-id="4292" />
+    <!-- CONTEC 另一个常见VID -->
+    <usb-device vendor-id="1155" />
+    <!-- 通用HID设备匹配 (class 3 = HID) -->
+    <usb-device class="3" />
+</resources>

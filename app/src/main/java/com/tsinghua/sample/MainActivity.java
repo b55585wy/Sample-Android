@@ -82,6 +82,7 @@ import com.lm.sdk.utils.BLEUtils;
 import com.lm.sdk.utils.ConvertUtils;
 import com.lm.sdk.utils.StringUtils;
 import com.lm.sdk.utils.UtilSharedPreference;
+import com.tsinghua.sample.core.SessionManager;
 
 import java.io.BufferedWriter;
 import java.io.File;
@@ -481,24 +482,16 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
 
             try {
                 VivaLink.startSampling();
-                // 建议保存到应用私有存储中，避免权限问题
                 SharedPreferences prefs;
                 prefs = this.getSharedPreferences("AppSettings", MODE_PRIVATE);
-                String savedExperimentId = prefs.getString("experiment_id", "");
-                String directoryPath = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES) + "/Sample/"+savedExperimentId+"/VivaLinkLog/";
-                File directory = new File(directoryPath);
-                if (!directory.exists()) {
-                    if (directory.mkdirs()) {
-                        Log.d("FileSave", "目录创建成功：" + directoryPath);
-                    } else {
-                        Log.e("FileSave", "目录创建失败：" + directoryPath);
-                        Toast.makeText(this, "无法创建目录，保存失败", Toast.LENGTH_SHORT).show();
-                        return;
-                    }
-                }
-                String fileName = "VivaLink_log_" + System.currentTimeMillis() + ".txt";
-                File logFile = new File(directory, fileName);
+                String savedExperimentId = prefs.getString("experiment_id", "default");
+                SessionManager sm = SessionManager.getInstance();
+                sm.ensureSession(this, savedExperimentId);
+                File dir = sm.subDir("ecg");
+                if (dir != null && !dir.exists()) dir.mkdirs();
+                File logFile = new File(dir, "ecg_" + System.currentTimeMillis() + ".csv");
                 logWriterECG = new BufferedWriter(new FileWriter(logFile, true));
+                logWriterECG.write("wall_ms,hr,rr,msg\n");
                 isRecordingECG = true;
                 btnStartEcg.setText("停止心电");
                 tvEcgData.setText("心电数据: 正在记录...");
@@ -518,9 +511,9 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
             tvEcgData.setText("心电数据: 记录停止");
             VivaLink.stopSampling();
             try {
-                if (logWriter != null) {
-                    logWriter.close();
-                    logWriter = null;
+                if (logWriterECG != null) {
+                    logWriterECG.close();
+                    logWriterECG = null;
                 }
                 Toast.makeText(MainActivity.this, "日志记录结束", Toast.LENGTH_SHORT).show();
             } catch (IOException e) {
@@ -540,21 +533,14 @@ public class MainActivity extends AppCompatActivity implements IResponseListener
             try {
                 SharedPreferences prefs;
                 prefs = this.getSharedPreferences("AppSettings", MODE_PRIVATE);
-                String savedExperimentId = prefs.getString("experiment_id", "");
-                String directoryPath = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES) + "/Sample/"+savedExperimentId+"/RingLog/";
-                File directory = new File(directoryPath);
-                if (!directory.exists()) {
-                    if (directory.mkdirs()) {
-                        Log.d("FileSave", "目录创建成功：" + directoryPath);
-                    } else {
-                        Log.e("FileSave", "目录创建失败：" + directoryPath);
-                        Toast.makeText(this, "无法创建目录，保存失败", Toast.LENGTH_SHORT).show();
-                        return;
-                    }
-                }
-                String fileName = "LMAPI_log_" + System.currentTimeMillis() + ".txt";
-                File logFile = new File(directory, fileName);
+                String savedExperimentId = prefs.getString("experiment_id", "default");
+                SessionManager sm = SessionManager.getInstance();
+                sm.ensureSession(this, savedExperimentId);
+                File dir = sm.subDir("ring");
+                if (dir != null && !dir.exists()) dir.mkdirs();
+                File logFile = new File(dir, "ring_" + System.currentTimeMillis() + ".csv");
                 logWriter = new BufferedWriter(new FileWriter(logFile, true));
+                logWriter.write("wall_ms,log\n");
                 Toast.makeText(MainActivity.this, "日志记录开始", Toast.LENGTH_SHORT).show();
                 recordLog("【日志记录开始】");
             } catch (IOException e) {

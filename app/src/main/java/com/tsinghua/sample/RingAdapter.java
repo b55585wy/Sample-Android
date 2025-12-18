@@ -62,15 +62,17 @@ public class RingAdapter extends RecyclerView.Adapter<RingAdapter.DeviceViewHold
         }
 
         holder.itemView.setOnClickListener(v -> {
-            // 保存选中的设备 MAC 地址到 SharedPreferences
+            String deviceName = device.getName();
+            // 保存选中的设备 MAC 地址和设备名到 SharedPreferences
             SharedPreferences.Editor editor = context.getSharedPreferences("AppSettings", MODE_PRIVATE).edit();
             editor.putString("mac_address", macAddress); // 保存设备 MAC 地址
+            editor.putString("device_name", deviceName); // 保存设备名称
             editor.apply();
 
             // 更新选中的设备信息显示
             ((RingSettingsActivity) context).updateSelectedDeviceInfo(macAddress);
 
-            Toast.makeText(context, "已选择设备: " + device.getName(), Toast.LENGTH_SHORT).show();
+            Toast.makeText(context, "已选择设备: " + deviceName, Toast.LENGTH_SHORT).show();
 
             // 刷新 UI，更新设备选择状态
             notifyDataSetChanged();

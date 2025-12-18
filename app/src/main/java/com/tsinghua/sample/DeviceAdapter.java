@@ -18,9 +18,7 @@ import android.widget.Toast;
 
 import androidx.recyclerview.widget.RecyclerView;
 
-import com.tsinghua.sample.activity.BackCameraSettingsActivity;
 import com.tsinghua.sample.activity.EcgSettingsActivity;
-import com.tsinghua.sample.activity.FrontCameraSettingsActivity;
 import com.tsinghua.sample.activity.ImuSettingsActivity;
 import com.tsinghua.sample.activity.ListActivity;
 import com.tsinghua.sample.activity.MicrophoneSettingsActivity;
@@ -46,31 +44,33 @@ public class DeviceAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
     // 摄像头控制器接口
     private ListActivity.CameraController cameraController;
 
-    public DeviceAdapter(Context context, List<Device> devices, ListActivity.CameraController cameraController) {
+    public DeviceAdapter(Context context, List<Device> devices, ListActivity.CameraController cameraController, IMURecorder sharedImuRecorder) {
         this.context = context;
         this.devices = devices;
         this.cameraController = cameraController;
-        this.imuRecorder = new IMURecorder(context);
+        this.imuRecorder = sharedImuRecorder != null ? sharedImuRecorder : new IMURecorder(context);
     }
 
     private final ServiceConnection oximeterConnection = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
             oxService = ((OximeterService.LocalBinder) service).getService();
-            oxService.setListener(data -> {
-                new Handler(Looper.getMainLooper()).post(() -> {
-                    if (currentOximeterViewHolder != null) {
-                        currentOximeterViewHolder.bindData(data);
-                    }
-                });
-            });
             serviceBound = true;
-            oxService.startRecording(context.getExternalFilesDir(Environment.DIRECTORY_MOVIES) + "/oximeter");
+            Log.d("DeviceAdapter", "OximeterService connected");
+            // 注意：监听器已在 OximeterViewHolder 中通过 OximeterManager 直接设置
+            // 录制由用户点击开始按钮触发，不在此处自动启动
         }
 
         @Override
         public void onServiceDisconnected(ComponentName name) {
             serviceBound = false;
+            Log.d("DeviceAdapter", "OximeterService disconnected");
+            // 更新断开连接状态
+            if (currentOximeterViewHolder != null) {
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    currentOximeterViewHolder.updateConnectionStatus(false);
+                });
+            }
         }
     };
 
@@ -83,10 +83,6 @@ public class DeviceAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
     public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
         LayoutInflater inflater = LayoutInflater.from(context);
         switch (viewType) {
-            case Device.TYPE_FRONT_CAMERA:
-                return new FrontCameraViewHolder(inflater.inflate(R.layout.item_front_camera, parent, false));
-            case Device.TYPE_BACK_CAMERA:
-                return new BackCameraViewHolder(inflater.inflate(R.layout.item_back_camera, parent, false));
             case Device.TYPE_MICROPHONE:
                 return new MicrophoneViewHolder(inflater.inflate(R.layout.item_microphone, parent, false));
             case Device.TYPE_IMU:
@@ -98,7 +94,7 @@ public class DeviceAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
             case Device.TYPE_OXIMETER:
                 return new OximeterViewHolder(inflater.inflate(R.layout.item_oximeter, parent, false));
             default:
-                throw new IllegalArgumentException("Invalid device type");
+                throw new IllegalArgumentException("Invalid device type: " + viewType);
         }
     }
 
@@ -106,103 +102,7 @@ public class DeviceAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
     public void onBindViewHolder(RecyclerView.ViewHolder holder, @SuppressLint("RecyclerView") int position) {
         Device device = devices.get(position);
 
-        if (holder instanceof FrontCameraViewHolder) {
-            FrontCameraViewHolder h = (FrontCameraViewHolder) holder;
-            h.deviceName.setText(device.getName());
-
-            // 更新按钮状态
-            boolean isRecording = cameraController.isFrontCameraRecording();
-            h.startBtn.setText(isRecording ? "结束" : "开始");
-            device.setRunning(isRecording);
-
-            h.startBtn.setOnClickListener(v -> {
-                if (cameraController.isFrontCameraRecording()) {
-                    cameraController.stopFrontCamera();
-                    device.setRunning(false);
-                    h.startBtn.setText("开始");
-                    Toast.makeText(context, "前置摄像头录制已停止", Toast.LENGTH_SHORT).show();
-                } else {
-                    try {
-                        cameraController.startFrontCamera();
-                        device.setRunning(true);
-                        h.startBtn.setText("结束");
-                        Toast.makeText(context, "前置摄像头录制正在启动...", Toast.LENGTH_SHORT).show();
-
-                        // 1.5秒后检查录制状态
-                        new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                            if (cameraController.isFrontCameraRecording()) {
-                                Toast.makeText(context, "前置摄像头录制已开始", Toast.LENGTH_SHORT).show();
-                            } else {
-                                device.setRunning(false);
-                                h.startBtn.setText("开始");
-                                Toast.makeText(context, "前置摄像头录制启动失败", Toast.LENGTH_SHORT).show();
-                            }
-                        }, 1500);
-
-                    } catch (Exception e) {
-                        Log.e("DeviceAdapter", "Failed to start front camera", e);
-                        device.setRunning(false);
-                        h.startBtn.setText("开始");
-                        Toast.makeText(context, "前置摄像头启动失败", Toast.LENGTH_SHORT).show();
-                    }
-                }
-            });
-
-            h.settingsBtn.setOnClickListener(v -> {
-                Intent intent = new Intent(context, FrontCameraSettingsActivity.class);
-                intent.putExtra("deviceName", device.getName());
-                context.startActivity(intent);
-            });
-
-        } else if (holder instanceof BackCameraViewHolder) {
-            BackCameraViewHolder h = (BackCameraViewHolder) holder;
-            h.deviceName.setText(device.getName());
-
-            // 更新按钮状态
-            boolean isRecording = cameraController.isBackCameraRecording();
-            h.startBtn.setText(isRecording ? "结束" : "开始");
-            device.setRunning(isRecording);
-
-            h.startBtn.setOnClickListener(v -> {
-                if (cameraController.isBackCameraRecording()) {
-                    cameraController.stopBackCamera();
-                    device.setRunning(false);
-                    h.startBtn.setText("开始");
-                    Toast.makeText(context, "后置摄像头录制已停止", Toast.LENGTH_SHORT).show();
-                } else {
-                    try {
-                        cameraController.startBackCamera();
-                        device.setRunning(true);
-                        h.startBtn.setText("结束");
-                        Toast.makeText(context, "后置摄像头录制正在启动...", Toast.LENGTH_SHORT).show();
-
-                        // 1.5秒后检查录制状态
-                        new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                            if (cameraController.isBackCameraRecording()) {
-                                Toast.makeText(context, "后置摄像头录制已开始", Toast.LENGTH_SHORT).show();
-                            } else {
-                                device.setRunning(false);
-                                h.startBtn.setText("开始");
-                                Toast.makeText(context, "后置摄像头录制启动失败", Toast.LENGTH_SHORT).show();
-                            }
-                        }, 1500);
-
-                    } catch (Exception e) {
-                        Log.e("DeviceAdapter", "Failed to start back camera", e);
-                        device.setRunning(false);
-                        h.startBtn.setText("开始");
-                        Toast.makeText(context, "后置摄像头启动失败", Toast.LENGTH_SHORT).show();
-                    }
-                }
-            });
-
-            h.settingsBtn.setOnClickListener(v -> {
-                Intent intent = new Intent(context, BackCameraSettingsActivity.class);
-                intent.putExtra("deviceName", device.getName());
-                context.startActivity(intent);
-            });
-
-        } else if (holder instanceof MicrophoneViewHolder) {
+        if (holder instanceof MicrophoneViewHolder) {
             MicrophoneViewHolder h = (MicrophoneViewHolder) holder;
             multiMicAudioRecorderHelper = new MultiMicAudioRecorderHelper(context);
             h.deviceName.setText(device.getName());
@@ -352,17 +252,11 @@ public class DeviceAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
 
             h.deviceName.setText(device.getName());
 
-            h.itemView.setOnClickListener(v -> h.toggleInfo());
+            // 初始化（扫描和连接功能都在 ViewHolder 内部完成）
+            h.init(context);
 
-            List<com.vivalnk.sdk.model.Device> ecgSubDevices = device.getEcgSubDevices();
-            h.bindData(context, ecgSubDevices);
-
-            h.settingsBtn.setOnClickListener(v -> {
-                Intent intent = new Intent(context, EcgSettingsActivity.class);
-                intent.putExtra("deviceName", device.getName());
-                intent.putExtra("device_object", device);
-                context.startActivity(intent);
-            });
+            // 不再需要跳转到 EcgSettingsActivity 选择设备
+            // 扫描和连接都在折叠页内完成
 
         } else if (holder instanceof OximeterViewHolder) {
             OximeterViewHolder h = (OximeterViewHolder) holder;
@@ -394,6 +288,28 @@ public class DeviceAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder>
 
     public ServiceConnection getOximeterConnection() {
         return oximeterConnection;
+    }
+
+    /**
+     * 通知血氧仪断开连接（USB设备移除时调用）
+     */
+    public void notifyOximeterDisconnected() {
+        if (currentOximeterViewHolder != null) {
+            new Handler(Looper.getMainLooper()).post(() -> {
+                currentOximeterViewHolder.updateConnectionStatus(false);
+            });
+        }
+    }
+
+    /**
+     * 通知血氧仪已连接
+     */
+    public void notifyOximeterConnected() {
+        if (currentOximeterViewHolder != null) {
+            new Handler(Looper.getMainLooper()).post(() -> {
+                currentOximeterViewHolder.updateConnectionStatus(true);
+            });
+        }
     }
 
     @Override

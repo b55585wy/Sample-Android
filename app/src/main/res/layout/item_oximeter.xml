@@ -1,63 +1,176 @@
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/deviceRoot"
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 血氧仪卡片 - iOS风格 -->
+<com.google.android.material.card.MaterialCardView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:padding="12dp"
-    android:orientation="vertical"
-    android:background="@android:color/white"
-    android:elevation="2dp">
+    android:layout_marginHorizontal="4dp"
+    android:layout_marginVertical="6dp"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="2dp"
+    app:strokeWidth="0dp"
+    app:cardBackgroundColor="@android:color/white">
 
-    <!-- 顶部信息区域 -->
     <LinearLayout
+        android:id="@+id/deviceRoot"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal">
+        android:orientation="vertical"
+        android:padding="16dp">
 
-        <TextView
-            android:id="@+id/deviceName"
+        <!-- 头部 - iOS风格 -->
+        <LinearLayout
+            android:id="@+id/headerLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingVertical="4dp">
+
+            <TextView
+                android:id="@+id/deviceName"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="血氧仪"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/black"
+                android:maxLines="1" />
+
+            <!-- 连接状态 -->
+            <TextView
+                android:id="@+id/statusText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="未连接"
+                android:textSize="12sp"
+                android:textColor="#FF9800"
+                android:layout_marginEnd="8dp" />
+
+            <ImageView
+                android:id="@+id/expandArrow"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:src="@android:drawable/arrow_down_float"
+                android:contentDescription="展开"
+                android:rotation="0" />
+
+        </LinearLayout>
+
+        <!-- 隐藏引用（兼容性） -->
+        <ImageView
+            android:id="@+id/deviceIcon"
             android:layout_width="0dp"
-            android:layout_weight="1"
-            android:layout_height="wrap_content"
-            android:text="血氧仪"
-            android:textSize="18sp"
-            android:textColor="#000" />
+            android:layout_height="0dp"
+            android:visibility="gone" />
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/startBtn"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="开始" />
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:visibility="gone" />
 
         <ImageButton
             android:id="@+id/settingsBtn"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:visibility="gone" />
+
+        <!-- 血氧仪数据展示区域 -->
+        <LinearLayout
+            android:id="@+id/infoLayout"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:src="@android:drawable/ic_menu_manage"
-            android:contentDescription="设置" />
+            android:orientation="vertical"
+            android:visibility="gone"
+            android:layout_marginTop="12dp"
+            android:padding="12dp"
+            android:background="@drawable/rounded_bg_light">
+
+            <!-- 数据显示 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <!-- 心率显示 -->
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="心率"
+                        android:textSize="12sp"
+                        android:textColor="#888888" />
+
+                    <TextView
+                        android:id="@+id/hrText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="-- bpm"
+                        android:textSize="20sp"
+                        android:textStyle="bold"
+                        android:textColor="#E53935" />
+                </LinearLayout>
+
+                <View
+                    android:layout_width="1dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginVertical="4dp"
+                    android:background="#DDDDDD" />
+
+                <!-- 血氧显示 -->
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:gravity="center">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="血氧"
+                        android:textSize="12sp"
+                        android:textColor="#888888" />
+
+                    <TextView
+                        android:id="@+id/spo2Text"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="-- %"
+                        android:textSize="20sp"
+                        android:textStyle="bold"
+                        android:textColor="#1E88E5" />
+                </LinearLayout>
+
+            </LinearLayout>
+
+            <!-- 调试日志区域 -->
+            <TextView
+                android:id="@+id/debugLogText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:padding="8dp"
+                android:background="#F0F0F0"
+                android:textSize="10sp"
+                android:textColor="#333333"
+                android:fontFamily="monospace"
+                android:maxLines="6"
+                android:scrollbars="vertical"
+                android:text="等待连接..."
+                android:visibility="visible" />
+
+        </LinearLayout>
+
     </LinearLayout>
 
-    <!-- 下方 info 区域 -->
-    <LinearLayout
-        android:id="@+id/infoLayout"
-        android:visibility="gone"
-        android:orientation="vertical"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="#EFEFEF"
-        android:padding="8dp"
-        android:translationY="100dp"
-        android:alpha="0">
-
-        <TextView
-            android:id="@+id/hrText"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="HR: -- bpm" />
-
-        <TextView
-            android:id="@+id/spo2Text"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="SpO₂: -- %" />
-    </LinearLayout>
-</LinearLayout>
+</com.google.android.material.card.MaterialCardView>

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 扫描到的ECG设备列表项 -->
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:padding="8dp"
+    android:layout_marginBottom="4dp"
+    android:background="@android:color/white">
+
+    <!-- 设备信息 -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_weight="1"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/deviceName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="ECGRec_XXXXXX"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="@android:color/black" />
+
+        <TextView
+            android:id="@+id/deviceMac"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="XX:XX:XX:XX:XX:XX"
+            android:textSize="11sp"
+            android:textColor="#888888" />
+
+    </LinearLayout>
+
+    <!-- 连接按钮 -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/connectBtn"
+        style="@style/Widget.MaterialComponents.Button"
+        android:layout_width="wrap_content"
+        android:layout_height="36dp"
+        android:text="连接"
+        android:textSize="12sp"
+        app:cornerRadius="8dp"
+        app:backgroundTint="#4CAF50" />
+
+</LinearLayout>

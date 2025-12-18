@@ -4,13 +4,16 @@ import java.io.Serializable;
 import java.util.List;
 
 public class Device implements Serializable {
-    public static final int TYPE_FRONT_CAMERA = 0;
-    public static final int TYPE_BACK_CAMERA = 1;
+    public static final int TYPE_CAMERA = 0;  // 合并的摄像头
     public static final int TYPE_MICROPHONE = 2;
     public static final int TYPE_IMU = 3;
     public static final int TYPE_RING = 4;
     public static final int TYPE_ECG = 5;
     public static final int TYPE_OXIMETER = 6;
+
+    // 保留旧类型常量用于兼容（映射到新类型）
+    public static final int TYPE_FRONT_CAMERA = 0;
+    public static final int TYPE_BACK_CAMERA = 0;
 
     private int type;
     private String name;
