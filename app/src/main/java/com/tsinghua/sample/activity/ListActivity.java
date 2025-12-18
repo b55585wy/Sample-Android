@@ -141,6 +141,9 @@ public class ListActivity extends AppCompatActivity implements IResponseListener
     private boolean frontCameraRecording = false;
     private boolean backCameraRecording = false;
 
+    // 录制时间追踪
+    private long recordingStartTime = 0;
+
     // 预加载的HeartRateEstimator
     private HeartRateEstimator preloadedEstimator;
     private volatile boolean isModelLoaded = false;
@@ -724,6 +727,9 @@ public class ListActivity extends AppCompatActivity implements IResponseListener
                     }
                     setCameraPlaceholderText("点击开始录制显示预览");
                     Toast.makeText(this, "录制时长到达，自动停止", Toast.LENGTH_SHORT).show();
+
+                    // 跳转到患者信息页面
+                    navigateToPatientInfo();
                 } catch (Exception e) {
                     Log.e("ListActivity", "Error in autoStopCallback UI update", e);
                 }
@@ -770,6 +776,9 @@ public class ListActivity extends AppCompatActivity implements IResponseListener
 
         SessionManager.getInstance().startSession(this, experimentId);
         TimeSync.startSessionClock();
+
+        // 记录录制开始时间
+        recordingStartTime = System.currentTimeMillis();
 
         // 启用全部模块
         recordingCoordinator.setModules(true, true, true, true, true, true);
@@ -823,6 +832,56 @@ public class ListActivity extends AppCompatActivity implements IResponseListener
         setCameraPlaceholderText("点击开始录制显示预览");
 
         Toast.makeText(this, "一键录制已停止", Toast.LENGTH_SHORT).show();
+
+        // 跳转到患者信息页面
+        navigateToPatientInfo();
+    }
+
+    /**
+     * 跳转到患者信息页面
+     */
+    private void navigateToPatientInfo() {
+        try {
+            // 获取会话目录
+            java.io.File sessionDir = SessionManager.getInstance().getSessionDir();
+            if (sessionDir == null) {
+                Log.w("ListActivity", "会话目录为空，无法跳转到患者信息页");
+                return;
+            }
+
+            // 获取会话ID（目录名）
+            String sessionId = sessionDir.getName();
+
+            // 计算录制时长
+            long recordingDuration = System.currentTimeMillis() - recordingStartTime;
+            String recordingTime = formatRecordingDuration(recordingDuration);
+
+            // 跳转到患者信息页面
+            PatientInfoActivity.start(this, sessionDir.getAbsolutePath(), sessionId, recordingTime);
+            Log.i("ListActivity", "跳转到患者信息页: sessionId=" + sessionId + ", duration=" + recordingTime);
+
+        } catch (Exception e) {
+            Log.e("ListActivity", "跳转患者信息页失败", e);
+        }
+    }
+
+    /**
+     * 格式化录制时长为可读字符串
+     */
+    private String formatRecordingDuration(long durationMs) {
+        long seconds = durationMs / 1000;
+        if (seconds < 60) {
+            return seconds + " 秒";
+        } else if (seconds < 3600) {
+            long min = seconds / 60;
+            long sec = seconds % 60;
+            return String.format(java.util.Locale.US, "%d 分 %d 秒", min, sec);
+        } else {
+            long hour = seconds / 3600;
+            long min = (seconds % 3600) / 60;
+            long sec = seconds % 60;
+            return String.format(java.util.Locale.US, "%d 时 %d 分 %d 秒", hour, min, sec);
+        }
     }
 
     // 后置摄像头控制方法

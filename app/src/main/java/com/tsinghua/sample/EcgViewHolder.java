@@ -54,7 +54,7 @@ public class EcgViewHolder extends RecyclerView.ViewHolder {
     private PlotView ecgPlot;
     private TextView tvLog;
 
-    private boolean expanded = true;
+    private boolean expanded = false;
     private boolean initialized = false;
     private boolean manualRecording = false;
     private Device currentDevice;
@@ -82,6 +82,10 @@ public class EcgViewHolder extends RecyclerView.ViewHolder {
         controller = ECGMeasurementController.getInstance();
         controller.init(context);
         controller.addListener(listener);
+
+        // 初始状态为折叠
+        deviceContainer.setVisibility(View.GONE);
+        expandArrow.setRotation(0);
 
         expandArrow.setOnClickListener(v -> toggleExpand());
         itemView.findViewById(R.id.headerLayout).setOnClickListener(v -> toggleExpand());

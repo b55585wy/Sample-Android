@@ -52,6 +52,9 @@
         <activity android:name=".activity.RingSettingsActivity"/>
         <activity android:name=".activity.EcgSettingsActivity"/>
         <activity android:name=".activity.OximeterSettingsActivity"/>
+        <activity
+            android:name=".activity.PatientInfoActivity"
+            android:windowSoftInputMode="adjustResize" />
         <service
             android:name=".utils.BLEService"
             android:enabled="true"

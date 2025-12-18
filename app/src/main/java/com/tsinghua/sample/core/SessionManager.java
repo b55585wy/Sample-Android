@@ -61,7 +61,7 @@ public class SessionManager {
     }
 
     private void createSubDirs() {
-        String[] subs = {"front", "back", "imu", "audio", "ring", "ecg", "spo2", "inference", "markers"};
+        String[] subs = {"front", "back", "imu", "audio", "ring", "ecg", "spo2", "inference", "markers", "info"};
         for (String s : subs) {
             File f = new File(sessionDir, s);
             //noinspection ResultOfMethodCallIgnored
