@@ -922,6 +922,27 @@ public class CameraFaceProcessor {
     }
 
     /**
+     * 获取当前视频文件路径
+     */
+    public String getCurrentVideoPath() {
+        return currentVideoPath;
+    }
+
+    /**
+     * 获取front目录路径
+     */
+    public String getFrontDir() {
+        if (currentVideoPath != null) {
+            File videoFile = new File(currentVideoPath);
+            File frontDir = videoFile.getParentFile();
+            if (frontDir != null) {
+                return frontDir.getAbsolutePath();
+            }
+        }
+        return null;
+    }
+
+    /**
      * 重置视频质量评估器（录制开始时自动调用）
      */
     private void resetQualityEvaluator() {

@@ -72,6 +72,7 @@ import com.tsinghua.sample.media.MultiMicAudioRecorderHelper;
 import com.tsinghua.sample.media.RecorderHelper;
 import com.tsinghua.sample.media.CameraHelper;
 import com.tsinghua.sample.device.OximeterManager;
+import com.tsinghua.sample.utils.VideoPostProcessor;
 import org.opencv.android.OpenCVLoader;
 
 import java.util.ArrayList;
@@ -149,6 +150,11 @@ public class ListActivity extends AppCompatActivity implements IResponseListener
     private HeartRateEstimator preloadedEstimator;
     private volatile boolean isModelLoaded = false;
     private final ExecutorService modelLoadExecutor = Executors.newSingleThreadExecutor();
+
+    // 视频后处理器
+    private VideoPostProcessor videoPostProcessor;
+    private volatile boolean isPostProcessing = false;
+    private android.app.ProgressDialog postProcessDialog;
 
     private final BroadcastReceiver broadcastReceiver = new BroadcastReceiver() {
         @Override
@@ -788,14 +794,39 @@ public class ListActivity extends AppCompatActivity implements IResponseListener
         recordingCoordinator.setAutoStopCallback(() -> {
             runOnUiThread(() -> {
                 try {
-                    // 先获取质量评估结果（在停止相机之前）
-                    VideoQualityEvaluator.QualityResult qualityResult = null;
+                    // 先获取视频路径和目录信息（在停止相机之前）
+                    String videoPath = null;
+                    String frontDir = null;
+                    String spo2Dir = null;
+
+                    // 获取视频路径（支持AI推理模式和非AI模式）
                     if (cameraPureFaceProcessor != null) {
-                        qualityResult = cameraPureFaceProcessor.getQualityResult();
+                        videoPath = cameraPureFaceProcessor.getCurrentVideoPath();
+                        frontDir = cameraPureFaceProcessor.getFrontDir();
                     } else if (cameraFaceProcessor != null) {
-                        qualityResult = cameraFaceProcessor.getQualityResult();
+                        videoPath = cameraFaceProcessor.getCurrentVideoPath();
+                        frontDir = cameraFaceProcessor.getFrontDir();
+                    } else if (frontCameraHelper != null) {
+                        // 非AI推理模式：从CameraHelper获取
+                        videoPath = frontCameraHelper.getCurrentFrontVideoPath();
+                        frontDir = frontCameraHelper.getFrontDir();
                     }
-                    final VideoQualityEvaluator.QualityResult finalQualityResult = qualityResult;
+
+                    java.io.File sessionDir = SessionManager.getInstance().getSessionDir();
+                    if (sessionDir != null) {
+                        java.io.File spo2DirFile = new java.io.File(sessionDir, "spo2");
+                        if (spo2DirFile.exists()) {
+                            spo2Dir = spo2DirFile.getAbsolutePath();
+                        }
+                    }
+
+                    final String finalVideoPath = videoPath;
+                    final String finalFrontDir = frontDir;
+                    final String finalSpo2Dir = spo2Dir;
+
+                    // 判断是否需要后处理
+                    boolean needPostProcess = (currentCameraMode == 0 || currentCameraMode == 2)
+                                              && finalVideoPath != null;
 
                     // 停止摄像头录制
                     stopFrontCameraRecording();
@@ -811,9 +842,9 @@ public class ListActivity extends AppCompatActivity implements IResponseListener
                     setCameraPlaceholderText("点击开始录制显示预览");
                     Toast.makeText(this, "录制时长到达，自动停止", Toast.LENGTH_SHORT).show();
 
-                    // 显示质量评估对话框，关闭后跳转到患者信息页面
-                    if (finalQualityResult != null) {
-                        showQualityResultDialog(finalQualityResult, this::navigateToPatientInfo);
+                    // 如果需要后处理，启动后处理流程
+                    if (needPostProcess) {
+                        startVideoPostProcessing(finalVideoPath, finalFrontDir, finalSpo2Dir);
                     } else {
                         navigateToPatientInfo();
                     }
@@ -856,9 +887,22 @@ public class ListActivity extends AppCompatActivity implements IResponseListener
 
     private void startAllRecording() {
         Log.d("ListActivity", "startAllRecording called, currentCameraMode=" + currentCameraMode);
+
+        // 检查是否正在进行后处理
+        if (isPostProcessing) {
+            Toast.makeText(this, "视频分析中，请等待完成后再开始新录制", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
         SharedPreferences prefs = getSharedPreferences("AppSettings", MODE_PRIVATE);
         String experimentId = prefs.getString("experiment_id", "default");
         boolean enableInference = prefs.getBoolean("enable_inference", false);
+
+        // 只有开启AI推理时才检查模型是否已加载完成
+        if (enableInference && (!isModelLoaded || preloadedEstimator == null)) {
+            Toast.makeText(this, "AI模型尚未准备完毕，请稍等几秒再试", Toast.LENGTH_SHORT).show();
+            return;
+        }
         Log.d("ListActivity", "experimentId=" + experimentId + ", enableInference=" + enableInference);
 
         SessionManager.getInstance().startSession(this, experimentId);
@@ -903,16 +947,43 @@ public class ListActivity extends AppCompatActivity implements IResponseListener
     }
 
     private void stopAllRecording() {
-        // 先获取质量评估结果（在停止相机之前，否则processor会被置空）
-        VideoQualityEvaluator.QualityResult qualityResult = null;
+        // 先获取视频路径和目录信息（在停止相机之前）
+        String videoPath = null;
+        String frontDir = null;
+        String spo2Dir = null;
+
+        // 获取视频路径（支持AI推理模式和非AI模式）
         if (cameraPureFaceProcessor != null) {
-            qualityResult = cameraPureFaceProcessor.getQualityResult();
-            Log.d("ListActivity", "从cameraPureFaceProcessor获取质量结果: " + qualityResult);
+            videoPath = cameraPureFaceProcessor.getCurrentVideoPath();
+            frontDir = cameraPureFaceProcessor.getFrontDir();
         } else if (cameraFaceProcessor != null) {
-            qualityResult = cameraFaceProcessor.getQualityResult();
-            Log.d("ListActivity", "从cameraFaceProcessor获取质量结果: " + qualityResult);
+            videoPath = cameraFaceProcessor.getCurrentVideoPath();
+            frontDir = cameraFaceProcessor.getFrontDir();
+        } else if (frontCameraHelper != null) {
+            // 非AI推理模式：从CameraHelper获取
+            videoPath = frontCameraHelper.getCurrentFrontVideoPath();
+            frontDir = frontCameraHelper.getFrontDir();
         }
-        final VideoQualityEvaluator.QualityResult finalQualityResult = qualityResult;
+
+        // 获取spo2目录
+        java.io.File sessionDir = SessionManager.getInstance().getSessionDir();
+        if (sessionDir != null) {
+            java.io.File spo2DirFile = new java.io.File(sessionDir, "spo2");
+            if (spo2DirFile.exists()) {
+                spo2Dir = spo2DirFile.getAbsolutePath();
+            }
+        }
+
+        final String finalVideoPath = videoPath;
+        final String finalFrontDir = frontDir;
+        final String finalSpo2Dir = spo2Dir;
+
+        // 判断是否需要后处理（前置摄像头模式或双摄模式）
+        boolean needPostProcess = (currentCameraMode == 0 || currentCameraMode == 2)
+                                  && finalVideoPath != null;
+
+        Log.d("ListActivity", "stopAllRecording: videoPath=" + finalVideoPath
+              + ", needPostProcess=" + needPostProcess);
 
         stopFrontCameraRecording();
         stopBackCameraRecording();
@@ -931,13 +1002,178 @@ public class ListActivity extends AppCompatActivity implements IResponseListener
 
         Toast.makeText(this, "一键录制已停止", Toast.LENGTH_SHORT).show();
 
-        // 显示质量评估对话框，关闭后跳转到患者信息页面
-        if (finalQualityResult != null) {
-            showQualityResultDialog(finalQualityResult, this::navigateToPatientInfo);
+        // 如果需要后处理，启动视频后处理流程
+        if (needPostProcess) {
+            startVideoPostProcessing(finalVideoPath, finalFrontDir, finalSpo2Dir);
         } else {
-            // 如果没有质量结果，直接跳转
+            // 不需要后处理，直接跳转到患者信息页面
             navigateToPatientInfo();
         }
+    }
+
+    /**
+     * 启动视频后处理
+     */
+    private void startVideoPostProcessing(String videoPath, String frontDir, String spo2Dir) {
+        if (isPostProcessing) {
+            Toast.makeText(this, "正在处理中，请稍候", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        isPostProcessing = true;
+
+        // 禁用开始录制按钮
+        if (btnStartAll != null) {
+            btnStartAll.setEnabled(false);
+        }
+
+        // 显示进度对话框
+        showPostProcessDialog();
+
+        // 创建后处理器
+        videoPostProcessor = new VideoPostProcessor(this);
+
+        try {
+            // 加载模型资源
+            java.io.InputStream modelStream = getAssets().open("model.onnx");
+            java.io.InputStream stateJsonStream = getAssets().open("state.json");
+            java.io.InputStream welchModelStream = getAssets().open("welch_psd.onnx");
+            java.io.InputStream hrModelStream = getAssets().open("get_hr.onnx");
+
+            // 启动后处理
+            videoPostProcessor.processVideo(videoPath, frontDir, spo2Dir,
+                    modelStream, stateJsonStream, welchModelStream, hrModelStream,
+                    new VideoPostProcessor.OnProgressListener() {
+                        @Override
+                        public void onProgress(int current, int total, String message) {
+                            updatePostProcessProgress(current, total, message);
+                        }
+
+                        @Override
+                        public void onComplete(VideoPostProcessor.PostProcessResult result) {
+                            dismissPostProcessDialog();
+                            isPostProcessing = false;
+
+                            // 恢复开始录制按钮
+                            if (btnStartAll != null) {
+                                btnStartAll.setEnabled(true);
+                            }
+
+                            // 显示简化版结果弹窗
+                            showSimplifiedResultDialog(result);
+                        }
+
+                        @Override
+                        public void onError(String error) {
+                            dismissPostProcessDialog();
+                            isPostProcessing = false;
+
+                            // 恢复开始录制按钮
+                            if (btnStartAll != null) {
+                                btnStartAll.setEnabled(true);
+                            }
+
+                            Toast.makeText(ListActivity.this,
+                                    "视频分析失败: " + error, Toast.LENGTH_LONG).show();
+
+                            // 出错时也跳转到患者信息页面
+                            navigateToPatientInfo();
+                        }
+                    });
+
+        } catch (java.io.IOException e) {
+            Log.e("ListActivity", "加载模型资源失败", e);
+            dismissPostProcessDialog();
+            isPostProcessing = false;
+
+            if (btnStartAll != null) {
+                btnStartAll.setEnabled(true);
+            }
+
+            Toast.makeText(this, "模型加载失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            navigateToPatientInfo();
+        }
+    }
+
+    /**
+     * 显示后处理进度对话框
+     */
+    private void showPostProcessDialog() {
+        if (postProcessDialog != null && postProcessDialog.isShowing()) {
+            return;
+        }
+
+        postProcessDialog = new android.app.ProgressDialog(this);
+        postProcessDialog.setTitle("视频分析中");
+        postProcessDialog.setMessage("正在分析视频，请勿关闭应用...");
+        postProcessDialog.setProgressStyle(android.app.ProgressDialog.STYLE_HORIZONTAL);
+        postProcessDialog.setMax(100);
+        postProcessDialog.setProgress(0);
+        postProcessDialog.setCancelable(false);
+        postProcessDialog.setCanceledOnTouchOutside(false);
+        postProcessDialog.show();
+    }
+
+    /**
+     * 更新后处理进度
+     */
+    private void updatePostProcessProgress(int current, int total, String message) {
+        if (postProcessDialog != null && postProcessDialog.isShowing()) {
+            postProcessDialog.setProgress(current);
+            postProcessDialog.setMessage(message);
+        }
+    }
+
+    /**
+     * 关闭后处理进度对话框
+     */
+    private void dismissPostProcessDialog() {
+        if (postProcessDialog != null && postProcessDialog.isShowing()) {
+            try {
+                postProcessDialog.dismiss();
+            } catch (Exception e) {
+                Log.w("ListActivity", "关闭进度对话框失败", e);
+            }
+        }
+        postProcessDialog = null;
+    }
+
+    /**
+     * 显示简化版结果弹窗（评分+结论）
+     */
+    private void showSimplifiedResultDialog(VideoPostProcessor.PostProcessResult result) {
+        if (result == null) {
+            navigateToPatientInfo();
+            return;
+        }
+
+        // 根据评分设置颜色
+        int colorRes;
+        if (result.overallScore >= 85) {
+            colorRes = android.R.color.holo_green_dark;
+        } else if (result.overallScore >= 70) {
+            colorRes = android.R.color.holo_blue_dark;
+        } else if (result.overallScore >= 50) {
+            colorRes = android.R.color.holo_orange_dark;
+        } else {
+            colorRes = android.R.color.holo_red_dark;
+        }
+
+        String message = String.format(java.util.Locale.US,
+                "综合评分: %d 分\n\n%s\n\n" +
+                "心率分析:\n• AI推理心率: %.1f bpm\n• 血氧仪心率: %.1f bpm\n• 差值: %.1f bpm",
+                result.overallScore,
+                result.conclusion,
+                result.aiHeartRate,
+                result.oximeterHeartRate,
+                result.heartRateDiff);
+
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("视频分析结果")
+            .setMessage(message)
+            .setPositiveButton("确定", (dialog, which) -> navigateToPatientInfo())
+            .setOnCancelListener(dialog -> navigateToPatientInfo())
+            .show();
     }
 
     /**
@@ -1266,6 +1502,14 @@ public class ListActivity extends AppCompatActivity implements IResponseListener
     protected void onResume() {
         super.onResume();
 
+        // 检查是否需要加载AI模型（用户可能在设置中开启了推理）
+        SharedPreferences prefs = getSharedPreferences("AppSettings", MODE_PRIVATE);
+        boolean enableInference = prefs.getBoolean("enable_inference", false);
+        if (enableInference && !isModelLoaded) {
+            Log.d("ListActivity", "onResume: 检测到推理已开启但模型未加载，开始加载模型");
+            preloadHeartRateModel();
+        }
+
         // 检查USB血氧仪状态（处理广播可能漏收的情况）
         OximeterManager oxManager = OximeterManager.getInstance();
         if (oxManager != null && !oxManager.isConnected() && usbManager != null) {
@@ -1308,6 +1552,13 @@ public class ListActivity extends AppCompatActivity implements IResponseListener
             cameraPureFaceProcessor.stopCamera();
             cameraPureFaceProcessor = null;
         }
+
+        // 释放视频后处理器资源
+        if (videoPostProcessor != null) {
+            videoPostProcessor.release();
+            videoPostProcessor = null;
+        }
+        dismissPostProcessDialog();
 
         unregisterReceiver(usbReceiver);
         super.onDestroy();

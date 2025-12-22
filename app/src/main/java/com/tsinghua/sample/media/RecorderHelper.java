@@ -49,6 +49,10 @@ public class RecorderHelper {
     private FrameMetadataRecorder frontMetaRecorder;
     private FrameMetadataRecorder backMetaRecorder;
 
+    // 存储当前视频路径
+    private String currentFrontVideoPath;
+    private String currentBackVideoPath;
+
     public boolean isFlashlightOn = false;
 
     public RecorderHelper(CameraHelper cameraHelper, Context context) {
@@ -73,15 +77,17 @@ public class RecorderHelper {
         startTimestamp = null;
         outputDirectory = null;
         frameDataFront.clear();
+        currentFrontVideoPath = null;  // 重置视频路径
         startTimestamp = generateTimestamp();
         prepareDirectories();
 
         File frontDir = new File(outputDirectory, "front");
         if (!frontDir.exists()) frontDir.mkdirs();
         File frontOutputFile = new File(frontDir, "front_camera_" + startTimestamp + ".mp4");
+        currentFrontVideoPath = frontOutputFile.getAbsolutePath();  // 保存视频路径
         File metaFile = new File(frontDir, "frame_metadata_front_" + startTimestamp + ".csv");
 
-        Log.d(TAG, "Setting up front recording, output: " + frontOutputFile.getAbsolutePath());
+        Log.d(TAG, "Setting up front recording, output: " + currentFrontVideoPath);
 
         try {
             frontMetaRecorder = new FrameMetadataRecorder(metaFile);
@@ -89,7 +95,7 @@ public class RecorderHelper {
             Log.e(TAG, "init front metadata recorder failed", e);
         }
 
-        setupMediaRecorder(frontOutputFile.getAbsolutePath(), true, 270);
+        setupMediaRecorder(currentFrontVideoPath, true, 270);
 
         if (cameraHelper.getSurfaceViewFront() == null) {
             Log.e(TAG, "Front SurfaceView is null");
@@ -470,5 +476,33 @@ public class RecorderHelper {
         Matrix matrix = new Matrix();
         matrix.postRotate(rotationDegrees);
         return Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), matrix, true);
+    }
+
+    /**
+     * 获取当前前置摄像头视频路径
+     */
+    public String getCurrentFrontVideoPath() {
+        return currentFrontVideoPath;
+    }
+
+    /**
+     * 获取当前后置摄像头视频路径
+     */
+    public String getCurrentBackVideoPath() {
+        return currentBackVideoPath;
+    }
+
+    /**
+     * 获取front目录路径
+     */
+    public String getFrontDir() {
+        if (currentFrontVideoPath != null) {
+            File videoFile = new File(currentFrontVideoPath);
+            File frontDir = videoFile.getParentFile();
+            if (frontDir != null) {
+                return frontDir.getAbsolutePath();
+            }
+        }
+        return null;
     }
 }

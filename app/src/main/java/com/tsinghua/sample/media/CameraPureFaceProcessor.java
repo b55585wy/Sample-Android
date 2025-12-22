@@ -94,8 +94,6 @@ public class CameraPureFaceProcessor {
     private CameraFaceProcessorCallback callback;
     private String currentVideoPath;
     private volatile boolean isRecording = false;
-    private File tempDir;         // 用来存每帧的 PNG
-    private int frameCount = 0;   // 帧计数
 
     // 使用MediaCodec+MediaMuxer录制（避免MediaRecorder需要额外Surface，且比OpenCV VideoWriter更稳定）
     private MediaCodec mediaCodec;
@@ -133,7 +131,7 @@ public class CameraPureFaceProcessor {
     private byte[] nv12Buffer = null;
 
     // AI处理帧率控制（每N帧处理一次AI，减少CPU负载）
-    private static final int AI_PROCESS_INTERVAL = 5;  // 每5帧处理1次AI
+    private static final int AI_PROCESS_INTERVAL = 2;  // 每2帧处理1次AI，约20秒输出第一个心率
     private int frameIndex = 0;
 
     // AI处理同步控制（防止回调堆积）
@@ -806,12 +804,13 @@ public class CameraPureFaceProcessor {
 
         SharedPreferences prefs = activity.getSharedPreferences("AppSettings", Context.MODE_PRIVATE);
         String experimentId = prefs.getString("experiment_id", "default");
-        final String baseDir = Environment
-                .getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
-                + "/Sample/" + experimentId + "/"+"Inference_"+System.currentTimeMillis()+"/";
-        tempDir = new File(baseDir + "frames_" + System.currentTimeMillis() + "/");
-        if (!tempDir.exists()) tempDir.mkdirs();
-        frameCount = 0;
+
+        // 使用 SessionManager 获取 front 目录，让 hr_log.csv 与视频放在一起
+        SessionManager sm = SessionManager.getInstance();
+        File sessionDir = sm.ensureSession(activity, experimentId);
+        File frontDir = new File(sessionDir, "front");
+        if (!frontDir.exists()) frontDir.mkdirs();
+        final String baseDir = frontDir.getAbsolutePath() + "/";
 
         // 先启动摄像头预览（快速操作）
         CameraManager manager = (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
@@ -826,6 +825,13 @@ public class CameraPureFaceProcessor {
             }
 
             manager.openCamera(cameraId, stateCallback, backgroundHandler);
+
+            // 如果已经预加载模型，跳过异步加载，但更新日志路径到 front 目录
+            if (isInitialized && heartRateEstimator != null) {
+                Log.d(TAG, "模型已预加载，跳过异步加载");
+                heartRateEstimator.setLogDirectory(baseDir);  // 更新日志路径
+                return;
+            }
 
             // 异步加载模型（避免ANR）
             initExecutor.execute(() -> {
@@ -1207,6 +1213,27 @@ public class CameraPureFaceProcessor {
     public VideoQualityEvaluator.QualityResult getQualityResult() {
         if (facePreProcessor != null) {
             return facePreProcessor.evaluateQuality();
+        }
+        return null;
+    }
+
+    /**
+     * 获取当前视频文件路径
+     */
+    public String getCurrentVideoPath() {
+        return currentVideoPath;
+    }
+
+    /**
+     * 获取front目录路径
+     */
+    public String getFrontDir() {
+        if (currentVideoPath != null) {
+            File videoFile = new File(currentVideoPath);
+            File frontDir = videoFile.getParentFile();
+            if (frontDir != null) {
+                return frontDir.getAbsolutePath();
+            }
         }
         return null;
     }

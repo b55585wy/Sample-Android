@@ -55,6 +55,33 @@ public class HeartRateEstimator {
         this.plotView = plotView;
     }
 
+    /**
+     * 设置日志输出目录（用于预加载后更新日志路径）
+     * @param outDir 新的输出目录路径
+     */
+    public void setLogDirectory(String outDir) {
+        try {
+            // 关闭旧的 writer
+            if (csvWriter != null) {
+                csvWriter.flush();
+                csvWriter.close();
+            }
+            // 创建新的 writer
+            File d = new File(outDir);
+            if (!d.exists()) d.mkdirs();
+            File csv = new File(d, "hr_log.csv");
+            boolean isNew = !csv.exists();
+            csvWriter = new BufferedWriter(new FileWriter(csv, true));
+            if (isNew) {
+                csvWriter.write("timestamp,output,hr\n");
+                csvWriter.flush();
+            }
+            Log.d("HeartRateEstimator", "日志路径已更新: " + csv.getAbsolutePath());
+        } catch (IOException e) {
+            Log.e("HeartRateEstimator", "更新日志路径失败", e);
+        }
+    }
+
     private final OrtEnvironment env;
     private final OrtSession signalSession;
     private final OrtSession welchSession;
@@ -98,7 +125,7 @@ public class HeartRateEstimator {
 
     private String Id;
     private final long[] frameShape = {1, 1, 36, 36, 3};
-    private final BufferedWriter csvWriter;
+    private BufferedWriter csvWriter;  // 非final，允许更新日志路径
 
     // 构造函数
     public HeartRateEstimator(InputStream modelStream,
@@ -279,16 +306,18 @@ public class HeartRateEstimator {
                     try (OrtSession.Result hrResult = hrSession.run(hrFeeds)) {
                         float hr = ((Number) ((OnnxTensor) hrResult.get("hr").orElseThrow()).getValue()).floatValue();
 
-                        // 根据真实时长修正 HR (因为模型默认按30FPS)
-                        if (timeStamps.size() >= 300) {
-                            long firstMs = timeStamps.getFirst();
-                            long lastMs  = timeStamps.getLast();
-                            float durationSec = (lastMs - firstMs) / 1000f;
-                            if (durationSec > 0f) {
-                                float averageFps = 299f / durationSec; // 299 帧间隔
-                                hr *= (averageFps / 30f);
-                            }
-                        }
+                        // FPS修正逻辑暂时禁用 - 实测发现会导致心率被错误缩小
+                        // 原因：当AI处理较慢(~5fps)时，300帧覆盖60秒，修正系数=5/30≈0.167
+                        // 这会把正确的心率(如87)错误地缩小为约14
+                        // if (timeStamps.size() >= 300) {
+                        //     long firstMs = timeStamps.getFirst();
+                        //     long lastMs  = timeStamps.getLast();
+                        //     float durationSec = (lastMs - firstMs) / 1000f;
+                        //     if (durationSec > 0f) {
+                        //         float averageFps = 299f / durationSec;
+                        //         hr *= (averageFps / 30f);
+                        //     }
+                        // }
 
                         // 卡尔曼滤波
                         if (kfHR == null) {

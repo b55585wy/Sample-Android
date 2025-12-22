@@ -431,6 +431,26 @@ public class CameraHelper {
     public SurfaceView getSurfaceViewFront() { return surfaceViewFront; }
     public SurfaceView getSurfaceViewBack() { return surfaceViewBack; }
 
+    /**
+     * 获取当前前置摄像头视频路径
+     */
+    public String getCurrentFrontVideoPath() {
+        if (recorderHelperFront != null) {
+            return recorderHelperFront.getCurrentFrontVideoPath();
+        }
+        return null;
+    }
+
+    /**
+     * 获取front目录路径
+     */
+    public String getFrontDir() {
+        if (recorderHelperFront != null) {
+            return recorderHelperFront.getFrontDir();
+        }
+        return null;
+    }
+
     // 释放资源
     public void release() {
         Log.d(TAG, "Releasing camera resources");
