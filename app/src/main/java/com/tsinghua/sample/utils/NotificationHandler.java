@@ -1270,7 +1270,7 @@ public class NotificationHandler {
                     long wall = com.tsinghua.sample.core.TimeSync.nowWallMillis();
                     String line = String.format(
                             Locale.US,
-                            "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
+                            "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
                             wall, frameTimestampMs, green, red, ir,
                             accX, accY, accZ,
                             gyroX, gyroY, gyroZ,
